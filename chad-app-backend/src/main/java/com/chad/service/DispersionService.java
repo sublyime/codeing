@@ -2,7 +2,6 @@ package com.chad.service;
 
 import com.chad.model.DispersionInput;
 import com.chad.model.DispersionResult;
-import com.chad.service.model.DispersionModel;
 import com.chad.service.model.impl.GaussianDispersionModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,15 +20,29 @@ public class DispersionService {
     }
 
     public DispersionResult runModel(DispersionInput input) {
-
         // Fetch live weather if windSpeed not set
         if (input.getWindSpeed() == 0) {
             fetchWeather(input);
         }
 
+        // Handle sourceReleaseType to direct calculation appropriately
+        String releaseType = input.getSourceReleaseType();
+        if (releaseType == null || releaseType.isEmpty()) {
+            releaseType = "GAS"; // Default to GAS if not specified
+        }
+
         switch (input.getModel().toUpperCase()) {
             case "GAUSSIAN":
-                return gaussianModel.calculate(input);
+                switch (releaseType.toUpperCase()) {
+                    case "GAS":
+                        return gaussianModel.calculateGas(input);
+                    case "LIQUID":
+                        return gaussianModel.calculateLiquid(input);
+                    case "CHEMICAL":
+                        return gaussianModel.calculateChemical(input);
+                    default:
+                        throw new IllegalArgumentException("Unsupported source release type: " + releaseType);
+                }
             default:
                 throw new IllegalArgumentException("Unsupported dispersion model: " + input.getModel());
         }
@@ -45,9 +58,9 @@ public class DispersionService {
                     .bodyToMono(String.class)
                     .block();
 
-            // TODO: Parse response JSON to extract wind speed and direction, stability
+            // TODO: Parse response JSON to extract wind speed, direction, and stability
             // class
-            // For demonstration, set dummy values:
+            // For now, set dummy values for demonstration:
             input.setWindSpeed(3.0);
             input.setWindDirection(270.0);
             input.setStabilityClass(DispersionInput.StabilityClass.D);

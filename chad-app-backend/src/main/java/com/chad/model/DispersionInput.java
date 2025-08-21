@@ -10,6 +10,7 @@ public class DispersionInput {
     private double sourceReleaseRate; // e.g., kg/s
     private double windSpeed; // m/s
     private double windDirection; // degrees from north
+    private String sourceReleaseType;
     private StabilityClass stabilityClass; // Enum defined below
 
     // Enum for chemical incident type
@@ -101,4 +102,13 @@ public class DispersionInput {
         this.stabilityClass = stabilityClass;
     }
 
+    // Getter and setter for sourceReleaseType
+
+    public String getSourceReleaseType() {
+        return sourceReleaseType;
+    }
+
+    public void setSourceReleaseType(String sourceReleaseType) {
+        this.sourceReleaseType = sourceReleaseType;
+    }
 }

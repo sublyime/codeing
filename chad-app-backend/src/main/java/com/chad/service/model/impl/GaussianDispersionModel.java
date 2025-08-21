@@ -19,18 +19,36 @@ public class GaussianDispersionModel implements DispersionModel {
 
     @Override
     public DispersionResult calculate(DispersionInput input) {
-        // Simplified example: create a rough plume polygon downwind from source
-        // location
+        // Default to gas calculation for compatibility
+        return calculateGas(input);
+    }
 
+    public DispersionResult calculateGas(DispersionInput input) {
+        // Example plume for gas release
+        return createPlumePolygon(input, 0.02, 0.002);
+    }
+
+    public DispersionResult calculateLiquid(DispersionInput input) {
+        // Example plume for liquid release with wider spread and shorter downwind
+        // length
+        return createPlumePolygon(input, 0.015, 0.004);
+    }
+
+    public DispersionResult calculateChemical(DispersionInput input) {
+        // Example plume for chemical release with moderate spread and length
+        return createPlumePolygon(input, 0.018, 0.003);
+    }
+
+    // Helper method to create plume polygon with given spread parameters
+    private DispersionResult createPlumePolygon(DispersionInput input, double downwindLength, double crosswindSpread) {
         double lat = input.getLatitude();
         double lon = input.getLongitude();
 
-        // Define dummy plume coordinates as a polygon roughly downwind (east)
         Coordinate[] coords = new Coordinate[] {
                 new Coordinate(lon, lat),
-                new Coordinate(lon + 0.01, lat + 0.002),
-                new Coordinate(lon + 0.02, lat - 0.002),
-                new Coordinate(lon, lat - 0.001),
+                new Coordinate(lon + downwindLength, lat + crosswindSpread),
+                new Coordinate(lon + 2 * downwindLength, lat - crosswindSpread),
+                new Coordinate(lon, lat - crosswindSpread / 2),
                 new Coordinate(lon, lat)
         };
 
@@ -41,8 +59,25 @@ public class GaussianDispersionModel implements DispersionModel {
         String geoJson = writer.write(polygon);
 
         DispersionResult result = new DispersionResult();
+        // Set geojson plume polygon
         result.setGeoJsonPlume(geoJson);
-        result.setHazardSummary(Collections.singletonMap("maxConcentration", 42.5));
+
+        // Example hazard summary based on type (you can customize)
+        double maxConcentration;
+        switch (input.getSourceReleaseType() != null ? input.getSourceReleaseType().toUpperCase() : "GAS") {
+            case "LIQUID":
+                maxConcentration = 30.0;
+                break;
+            case "CHEMICAL":
+                maxConcentration = 50.0;
+                break;
+            case "GAS":
+            default:
+                maxConcentration = 42.5;
+                break;
+        }
+
+        result.setHazardSummary(Collections.singletonMap("maxConcentration", maxConcentration));
         result.setConcentrationContours(Collections.emptyList());
 
         return result;
