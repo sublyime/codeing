@@ -1,11 +1,13 @@
 package com.chad.model;
 
 import javax.persistence.Entity;
+import javax.persistence.Table;
 import javax.persistence.Id;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 
 @Entity
+@Table(name = "location", schema = "public")
 public class Location {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
