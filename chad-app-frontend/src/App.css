@@ -1,38 +1,40 @@
-.App {
-  text-align: center;
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+    "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #fff;
+  color: #212529;
+  box-sizing: border-box;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+*, *::before, *::after {
+  box-sizing: inherit;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
+/* Container dividing sidebar and map */
+.app-container {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+  height: 100vh; /* full viewport height */
+  overflow: hidden;
 }
 
-.App-link {
-  color: #61dafb;
+/* Sidebar styling */
+.sidebar {
+  width: 300px;
+  padding: 20px;
+  overflow-y: auto;
+  background-color: #f0f0f0;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch; /* smooth scrolling on iOS */
+  border-right: 1px solid #ddd;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* Map container fills remaining space */
+.map-container {
+  flex-grow: 1;
+  height: 100vh;
 }

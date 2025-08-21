@@ -25,18 +25,37 @@ function App() {
   }, []);
 
   return (
-    <div style={{ height: '100vh', width: '100%' }}>
-      <MapContainer center={center} zoom={3} style={{ height: '100%', width: '100%' }}>
-        <TileLayer
-          attribution='&copy; <a href="https://osm.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        {locations.map((loc) => (
-          <Marker key={loc.id} position={[loc.latitude, loc.longitude]}>
-            <Popup>{loc.name}</Popup>
-          </Marker>
-        ))}
-      </MapContainer>
+    <div className="app-container" style={{ display: 'flex', height: '100vh', margin: 0 }}>
+      {/* Sidebar */}
+      <div
+        className="sidebar"
+        style={{
+          width: '300px',
+          padding: '20px',
+          backgroundColor: '#f0f0f0',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+        }}
+      >
+        <h1>CHAD Chemical Dispersion</h1>
+        <p>Sidebar content goes here — controls, input forms, chemical info, etc.</p>
+        {/* You can add forms or controls here */}
+      </div>
+
+      {/* Map container */}
+      <div className="map-container" style={{ flexGrow: 1, height: '100vh' }}>
+        <MapContainer center={center} zoom={3} style={{ height: '100%', width: '100%' }}>
+          <TileLayer
+            attribution='&copy; <a href="https://osm.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          {locations.map((loc) => (
+            <Marker key={loc.id} position={[loc.latitude, loc.longitude]}>
+              <Popup>{loc.name}</Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      </div>
     </div>
   );
 }
