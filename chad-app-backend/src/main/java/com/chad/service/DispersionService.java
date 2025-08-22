@@ -3,6 +3,7 @@ package com.chad.service;
 import com.chad.model.DispersionInput;
 import com.chad.model.DispersionResult;
 import com.chad.service.model.impl.GaussianDispersionModel;
+import com.chad.service.model.impl.AlohaDispersionModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -11,24 +12,24 @@ import org.springframework.web.reactive.function.client.WebClient;
 public class DispersionService {
 
     private final GaussianDispersionModel gaussianModel;
+    private final AlohaDispersionModel alohaModel;
     private final WebClient weatherClient;
 
     @Autowired
-    public DispersionService(GaussianDispersionModel gaussianModel) {
+    public DispersionService(GaussianDispersionModel gaussianModel, AlohaDispersionModel alohaModel) {
         this.gaussianModel = gaussianModel;
+        this.alohaModel = alohaModel;
         this.weatherClient = WebClient.create("https://api.weather.gov");
     }
 
     public DispersionResult runModel(DispersionInput input) {
-        // Fetch live weather if windSpeed not set
         if (input.getWindSpeed() == 0) {
             fetchWeather(input);
         }
 
-        // Handle sourceReleaseType to direct calculation appropriately
         String releaseType = input.getSourceReleaseType();
         if (releaseType == null || releaseType.isEmpty()) {
-            releaseType = "GAS"; // Default to GAS if not specified
+            releaseType = "GAS";
         }
 
         switch (input.getModel().toUpperCase()) {
@@ -40,6 +41,17 @@ public class DispersionService {
                         return gaussianModel.calculateLiquid(input);
                     case "CHEMICAL":
                         return gaussianModel.calculateChemical(input);
+                    default:
+                        throw new IllegalArgumentException("Unsupported source release type: " + releaseType);
+                }
+            case "ALOHA":
+                switch (releaseType.toUpperCase()) {
+                    case "GAS":
+                        return alohaModel.calculateGas(input);
+                    case "LIQUID":
+                        return alohaModel.calculateLiquid(input);
+                    case "CHEMICAL":
+                        return alohaModel.calculateChemical(input);
                     default:
                         throw new IllegalArgumentException("Unsupported source release type: " + releaseType);
                 }
@@ -58,15 +70,12 @@ public class DispersionService {
                     .bodyToMono(String.class)
                     .block();
 
-            // TODO: Parse response JSON to extract wind speed, direction, and stability
+            // TODO: Parse response JSON to extract wind speed and direction, stability
             // class
-            // For now, set dummy values for demonstration:
             input.setWindSpeed(3.0);
             input.setWindDirection(270.0);
             input.setStabilityClass(DispersionInput.StabilityClass.D);
-
         } catch (Exception e) {
-            // Fallback defaults
             input.setWindSpeed(1.5);
             input.setWindDirection(180.0);
             input.setStabilityClass(DispersionInput.StabilityClass.D);
