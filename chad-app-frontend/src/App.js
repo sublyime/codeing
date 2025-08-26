@@ -1,402 +1,387 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, GeoJSON, useMapEvents } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import iconUrl from 'leaflet/dist/images/marker-icon.png';
-import iconShadowUrl from 'leaflet/dist/images/marker-shadow.png';
+import React, { useState, useEffect, useRef } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  GeoJSON,
+  LayersControl,
+  LayerGroup,
+  useMapEvents,
+} from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
-const DefaultIcon = L.icon({
-  iconUrl,
-  shadowUrl: iconShadowUrl,
-  iconAnchor: [12, 41],
+// Override Leaflet default icon paths to CDN URLs
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
 });
-L.Marker.prototype.options.icon = DefaultIcon;
 
-function LocationSelector({ onLocation }) {
+// POI Icons (same as before)
+const poiIcons = {
+  school: L.icon({ iconUrl: "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-green.png", iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34]}),
+  hospital: L.icon({ iconUrl: "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-red.png", iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34]}),
+  restaurant: L.icon({ iconUrl: "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-orange.png", iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34]}),
+  fuel: L.icon({ iconUrl: "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-yellow.png", iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34]}),
+  place_of_worship: L.icon({ iconUrl: "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-violet.png", iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34]}),
+  bank: L.icon({ iconUrl: "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-grey.png", iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34]}),
+  pharmacy: L.icon({ iconUrl: "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-blue.png", iconSize: [25,41], iconAnchor: [12,41], popupAnchor: [1,-34]}),
+  default: L.Icon.Default.prototype,
+};
+const getPoiIcon = (type) => poiIcons[type] || poiIcons.default;
+
+// Dispersion models supported by your backend
+const DISPERSION_MODELS = [
+  { value: "GAUSSIAN", label: "Gaussian" },
+  { value: "ALOHA", label: "ALOHA" },
+];
+
+// Ollama AI models you have installed
+const AI_MODELS = [
+  { value: "codellama:7b", label: "CodeLlama 7b" },
+  { value: "llama3:70b", label: "LLaMA 3 70b" },
+  { value: "codellama:latest", label: "CodeLlama latest" },
+];
+
+const sourceOptions = {
+  GAS: { label: "Gas", rateLabel: "Source Concentration (ppm)" },
+  LIQUID: { label: "Liquid", rateLabel: "Source Volume (liters/sec)" },
+  CHEMICAL: { label: "Chemical", rateLabel: "Mass (kg)" },
+};
+
+const POI_TYPES = [
+  "school",
+  "hospital",
+  "restaurant",
+  "fuel",
+  "place_of_worship",
+  "bank",
+  "pharmacy",
+];
+
+const DEFAULT_RADIUS = 8046;
+const AI_BASE_URL = "http://localhost:11434";
+const AI_GENERATE_ENDPOINT = `${AI_BASE_URL}/api/generate`;
+
+// Map events handler
+function LocationSelector({ onClick }) {
   useMapEvents({
     click(e) {
-      onLocation(e.latlng);
+      onClick(e.latlng);
     },
   });
   return null;
 }
 
-const sourceTypeOptions = {
-  GAS: { label: 'Gas', rateLabel: 'Source Concentration (ppm)' },
-  LIQUID: { label: 'Liquid', rateLabel: 'Source Volume (liters/sec)' },
-  CHEMICAL: { label: 'Chemical', rateLabel: 'Source Mass (kg/sec)' },
-};
-
-const modelOptions = [
-  { value: 'GAUSSIAN', label: 'Gaussian' },
-  { value: 'ALOHA', label: 'ALOHA' },
-];
-
-function App() {
-  const [formData, setFormData] = useState({
-    chemicalName: '',
-    model: 'GAUSSIAN',
-    latitude: '',
-    longitude: '',
-    sourceType: 'GAS',
-    sourceRate: '',
-    citySearch: '',
+export default function App() {
+  const [form, setForm] = useState({
+    chemicalName: "",
+    dispersionModel: "GAUSSIAN", // For backend calculation
+    aiModel: "codellama:7b",     // For AI analysis
+    latitude: "",
+    longitude: "",
+    sourceType: "GAS",
+    rate: "",
+    poiRadius: DEFAULT_RADIUS,
     weather: null,
   });
-  const [markerPos, setMarkerPos] = useState(null);
-  const [plume, setPlume] = useState(null);
-  const [receptors, setReceptors] = useState([]);
-  const [placesOfConcern, setPlacesOfConcern] = useState([]);
-  const [showAnalysis, setShowAnalysis] = useState(true);
-  const [layers, setLayers] = useState({
-    plume: true,
-    receptors: true,
-  });
 
+  const [markerPos, setMarkerPos] = useState(null);
+  const [pois, setPois] = useState([]);
+  const [selectedPois, setSelectedPois] = useState([]);
+  const [receptors, setReceptors] = useState([]);
+  const [plume, setPlume] = useState(null);
+  const [analysis, setAnalysis] = useState("");
   const mapRef = useRef();
 
-  useEffect(() => {
-    console.log('Plume updated:', plume);
-  }, [plume]);
+  const onChange = (e) => {
+    const { name, value } = e.target;
+    setForm((f) => ({ ...f, [name]: value }));
+  };
 
-  const onLocation = (latlng) => {
+  const togglePoi = (type) => {
+    setSelectedPois((sp) =>
+      sp.includes(type) ? sp.filter((t) => t !== type) : [...sp, type]
+    );
+  };
+
+  const onRadiusChange = (e) => {
+    const val = Number(e.target.value);
+    if (!isNaN(val) && val > 10) {
+      setForm((f) => ({ ...f, poiRadius: val }));
+      if (markerPos) {
+        fetchPois(markerPos.lat, markerPos.lng, val);
+      }
+    }
+  };
+
+  const onMapClick = (latlng) => {
     setMarkerPos(latlng);
-    setFormData(prev => ({
-      ...prev,
+    setForm((f) => ({
+      ...f,
       latitude: latlng.lat.toFixed(6),
       longitude: latlng.lng.toFixed(6),
       weather: null,
     }));
+    fetchPois(latlng.lat, latlng.lng, form.poiRadius);
+    setPlume(null);
+    setAnalysis("");
   };
 
-  const fetchWeather = async (lat, lon) => {
-    try {
-      const pointUrl = `https://api.weather.gov/points/${lat},${lon}`;
-      const pointResponse = await fetch(pointUrl);
-      if (!pointResponse.ok) throw new Error('Error fetching point info');
-      const pointData = await pointResponse.json();
-
-      const stationsUrl = pointData.properties.observationStations;
-      const stationsResponse = await fetch(stationsUrl);
-      if (!stationsResponse.ok) throw new Error('Error fetching stations');
-      const stationsData = await stationsResponse.json();
-
-      if (!stationsData.features || stationsData.features.length === 0) throw new Error('No stations found');
-
-      const stationId = stationsData.features[0].id;
-      const obsUrl = `${stationId}/observations/latest`;
-
-      const obsResponse = await fetch(obsUrl);
-      if (!obsResponse.ok) throw new Error('Error fetching latest observation');
-      const obsData = await obsResponse.json();
-
-      const props = obsData.properties;
-      setFormData(prev => ({
-        ...prev,
-        weather: {
-          temperature: props.temperature?.value,
-          windSpeed: props.windSpeed?.value,
-          windDirection: props.windDirection?.value,
-          humidity: props.relativeHumidity?.value,
-          textDescription: props.textDescription,
-        },
-      }));
-    } catch (error) {
-      console.error('Weather fetch error:', error);
-      alert('Weather data unavailable');
-    }
+  const onDrag = (e) => {
+    onMapClick(e.target.getLatLng());
   };
 
-  useEffect(() => {
-    if (formData.latitude && formData.longitude) {
-      fetchWeather(formData.latitude, formData.longitude);
-    } else {
-      setFormData(prev => ({ ...prev, weather: null }));
-    }
-  }, [formData.latitude, formData.longitude]);
-
-  const fetchPlacesOfConcern = async (polygonGeoJson) => {
-    if (!polygonGeoJson) return;
-
-    console.log('Fetching places for polygon:', polygonGeoJson);
-
-    const coords = polygonGeoJson.geometry?.coordinates?.[0];
-    if (!coords || coords.length < 3) {
-      console.warn('Invalid polygon coordinates');
-      return;
-    }
-
-    const lons = coords.map(c => c[0]);
-    const lats = coords.map(c => c[1]);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-
-    console.log('Bounding Box:', minLat, minLon, maxLat, maxLon);
-
-    const query = `
-      [out:json][timeout:25];
+  async function fetchPois(lat, lon, radius){
+    // Same retry logic as before...
+    const query = `[out:json][timeout:25];
       (
-        node["amenity"](${minLat},${minLon},${maxLat},${maxLon});
-        way["amenity"](${minLat},${minLon},${maxLat},${maxLon});
-        relation["amenity"](${minLat},${minLon},${maxLat},${maxLon});
+        node["amenity"](around:${radius},${lat},${lon});
+        way["amenity"](around:${radius},${lat},${lon});
+        relation["amenity"](around:${radius},${lat},${lon});
       );
-      out center;
-    `;
+      out center;`;
+    const maxRetries = 3;
+    for(let attempt=1; attempt<=maxRetries; attempt++){
+      try {
+        const res = await fetch("https://overpass-api.de/api/interpreter", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: query,
+        });
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const cleaned = data.elements.map(el => ({
+          id: el.id,
+          name: el.tags?.name || "Unnamed",
+          type: el.tags?.amenity || "other",
+          lat: el.lat ?? el.center?.lat,
+          lon: el.lon ?? el.center?.lon,
+        })).filter(p => p.lat && p.lon);
+        setPois(cleaned);
+        setReceptors(cleaned);
+        return;
+      } catch(e) {
+        if(attempt === maxRetries){
+          setPois([]);
+          setReceptors([]);
+          alert("Failed to load POIs after several attempts.");
+        } else {
+          await new Promise(r => setTimeout(r, 1000 * attempt));
+        }
+      }
+    }
+  }
 
-    try {
-      const response = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: query,
-      });
-
-      if (!response.ok) {
-        console.error('Overpass API error:', response.statusText);
-        setPlacesOfConcern([]);
+  // Fixed weather fetch with correct station URL extraction
+  useEffect(() => {
+    async function fetchWeather() {
+      if(!form.latitude || !form.longitude){
+        setForm(f => ({...f, weather: null}));
         return;
       }
-
-      const data = await response.json();
-      const places = data.elements.map(e => ({
-        name: e.tags?.name || 'Unnamed',
-        type: e.tags?.amenity || 'Unknown',
-        lat: e.lat || e.center?.lat,
-        lon: e.lon || e.center?.lon,
-      }));
-
-      console.log('Places retrieved:', places);
-      setPlacesOfConcern(places);
-    } catch (error) {
-      console.error('Error fetching places of concern:', error);
-      setPlacesOfConcern([]);
+      try {
+        const res = await fetch(`https://api.weather.gov/points/${form.latitude},${form.longitude}`);
+        if(!res.ok) throw new Error("Failed to get points");
+        const data = await res.json();
+        if(!data.properties?.observationStations) throw new Error("No observation stations");
+        const stationsRes = await fetch(data.properties.observationStations);
+        if(!stationsRes.ok) throw new Error("Failed to get stations");
+        const stationsData = await stationsRes.json();
+        if(!stationsData.features?.length) throw new Error("No stations found");
+        const stationUrl = stationsData.features[0].id;
+        const obsRes = await fetch(`${stationUrl}/observations/latest`);
+        if(!obsRes.ok) throw new Error("Failed to get latest observation");
+        const obsData = await obsRes.json();
+        const p = obsData.properties;
+        setForm(f => ({
+          ...f,
+          weather: {
+            temperature: p.temperature?.value,
+            humidity: p.relativeHumidity?.value,
+            windSpeed: p.windSpeed?.value,
+            windDirection: p.windDirection?.value,
+            condition: p.textDescription,
+          },
+        }));
+      } catch (e) {
+        console.error("Weather error:", e);
+        alert("Failed to load weather data.");
+      }
     }
-  };
+    fetchWeather();
+  }, [form.latitude, form.longitude]);
 
-  useEffect(() => {
-    if (plume) {
-      fetchPlacesOfConcern(plume);
-    } else {
-      setPlacesOfConcern([]);
+  async function fetchAnalysis(plume, receptors, summary) {
+    if(!plume || !summary){
+      setAnalysis("Insufficient data");
+      return;
     }
-  }, [plume]);
-
-  const calculatePlumeArea = (plumeGeoJson) => {
-    const coords = plumeGeoJson?.geometry?.coordinates?.[0];
-    if (!coords || coords.length < 3) return null;
-    let area = 0;
-    for (let i = 0; i < coords.length - 1; i++) {
-      area += coords[i][0] * coords[i + 1][1] - coords[i + 1][0] * coords[i][1];
+    try {
+      const prompt = `Environmental hazard analysis:\n${JSON.stringify(plume)}\n${JSON.stringify(receptors)}\n${JSON.stringify(summary)}\nPlease respond concisely.`;
+      const res = await fetch(AI_GENERATE_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: form.aiModel,
+          prompt,
+          stream: false,
+        }),
+      });
+      if(!res.ok) throw new Error(`AI API error: ${res.status}`);
+      const data = await res.json();
+      setAnalysis(data.response||"No response");
+    } catch(e) {
+      console.error("AI analysis error:", e);
+      setAnalysis("AI analysis failed.");
     }
-    return Math.abs(area) / 2;
-  };
+  }
 
-  const onInputChange = e => {
-    setFormData(prev => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
-  };
+  async function onSubmit(e){
+    e.preventDefault();
+    if(!form.chemicalName || !form.latitude || !form.longitude || !form.rate){
+      alert("Please fill all required fields.");
+      return;
+    }
+    try {
+      const resp = await fetch("/api/dispersion/calculate", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          chemicalName: form.chemicalName,
+          model: form.dispersionModel,
+          latitude: Number(form.latitude),
+          longitude: Number(form.longitude),
+          sourceType: form.sourceType,
+          rate: Number(form.rate),
+          incident: "gas",
+        }),
+      });
+      if(!resp.ok) throw new Error("Dispersion API error");
+      const data = await resp.json();
+      setPlume(data.geoJsonPlume ? JSON.parse(data.geoJsonPlume) : null);
+      await fetchAnalysis(data.geoJsonPlume, receptors, data.hazardSummary);
+    } catch(e){
+      alert(e.message);
+    }
+  }
 
-  const handleClear = () => {
-    setFormData({
-      chemicalName: '',
-      model: 'GAUSSIAN',
-      latitude: '',
-      longitude: '',
-      sourceType: 'GAS',
-      sourceRate: '',
-      citySearch: '',
+  function onClear(){
+    setForm({
+      chemicalName: "",
+      dispersionModel: "GAUSSIAN",
+      aiModel: "codellama:7b",
+      latitude: "",
+      longitude: "",
+      sourceType: "GAS",
+      rate: "",
+      poiRadius: DEFAULT_RADIUS,
       weather: null,
     });
     setMarkerPos(null);
-    setPlume(null);
+    setPois([]);
     setReceptors([]);
-    setPlacesOfConcern([]);
-  };
-
-  const handleSubmit = async e => {
-    e.preventDefault();
-    if (!formData.chemicalName || !formData.latitude || !formData.longitude || !formData.sourceRate) {
-      alert("Please fill in all required fields.");
-      return;
-    }
-    const payload = {
-      chemicalName: formData.chemicalName,
-      model: formData.model,
-      latitude: parseFloat(formData.latitude),
-      longitude: parseFloat(formData.longitude),
-      sourceType: formData.sourceType,
-      sourceRate: parseFloat(formData.sourceRate),
-      incidentType: "GAS",
-    };
-    try {
-      const resp = await fetch('/api/dispersion/calculate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!resp.ok) throw new Error(`Server error: ${resp.statusText}`);
-      const data = await resp.json();
-      if (data.geoJsonPlume) {
-        setPlume(JSON.parse(data.geoJsonPlume));
-      } else {
-        setPlume(null);
-      }
-      if (data.receptors) {
-        setReceptors(data.receptors);
-      } else {
-        setReceptors([]);
-      }
-    } catch (ex) {
-      alert(`Error: ${ex.message}`);
-    }
-  };
+    setPlume(null);
+    setSelectedPois([]);
+    setAnalysis("");
+  }
 
   return (
-    <div style={{ display: 'flex', height: '100vh' }}>
-      <div style={{ width: 360, padding: 20, background: '#f0f0f0', overflowY: 'auto' }}>
-        <h2>CHAD Hazard Analysis by Ty Fairchild</h2>
+    <>
+      <header style={{padding:16, backgroundColor:"#222", color:"white", fontWeight:"bold"}}>
+        Chemical Dispersion Application
+      </header>
+      <div style={{display:"flex", height:"calc(100vh - 64px)"}}>
+        <aside style={{width:420, padding:20, backgroundColor:"#f7f7f7", borderRight:"1px solid #ccc", overflowY:"auto", boxSizing:"border-box"}}>
+          <form onSubmit={onSubmit} style={{display:"flex", flexDirection:"column", gap:12}}>
+            <label>Chemical Name *</label>
+            <input name="chemicalName" value={form.chemicalName} onChange={onChange} required />
 
-        <div>
-          <label>
-            Chemical Name*:
-            <input name="chemicalName" value={formData.chemicalName} onChange={onInputChange} required />
-          </label>
-        </div>
-        <div>
-          <label>
-            Model:
-            <select name="model" value={formData.model} onChange={onInputChange}>
-              {modelOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            <label>Dispersion Model</label>
+            <select name="dispersionModel" value={form.dispersionModel} onChange={onChange}>
+              {DISPERSION_MODELS.map(m => (<option key={m.value} value={m.value}>{m.label}</option>))}
             </select>
-          </label>
-        </div>
-        <div>
-          <label>
-            Source Type:
-            <select name="sourceType" value={formData.sourceType} onChange={onInputChange}>
-              {Object.entries(sourceTypeOptions).map(([key, opt]) => (
-                <option key={key} value={key}>{opt.label}</option>
+
+            <label>AI Model</label>
+            <select name="aiModel" value={form.aiModel} onChange={onChange}>
+              {AI_MODELS.map(m => (<option key={m.value} value={m.value}>{m.label}</option>))}
+            </select>
+
+            <label>Source Type *</label>
+            <select name="sourceType" value={form.sourceType} onChange={onChange}>
+              {Object.entries(sourceOptions).map(([key, val]) => (<option key={key} value={key}>{val.label}</option>))}
+            </select>
+
+            <label>{sourceOptions[form.sourceType]?.rateLabel}</label>
+            <input name="rate" value={form.rate} onChange={onChange} />
+
+            <label>Latitude</label>
+            <input name="latitude" value={form.latitude} readOnly />
+
+            <label>Longitude</label>
+            <input name="longitude" value={form.longitude} readOnly />
+
+            <label>POI Radius</label>
+            <input name="poiRadius" value={form.poiRadius} type="number" min={10} max={100000} onChange={onRadiusChange} />
+
+            <label>Toggle POI Types</label>
+            <div style={{display:"flex", flexWrap:"wrap", gap:10}}>
+              {POI_TYPES.map(type => (
+                <label key={type} style={{flexBasis:"45%"}}>
+                  <input type="checkbox" checked={selectedPois.includes(type)} onChange={() => togglePoi(type)} />
+                  {" "+type.replace(/_/g," ")}
+                </label>
               ))}
-            </select>
-          </label>
-        </div>
-        <div>
-          <label>
-            {sourceTypeOptions[formData.sourceType].rateLabel}*:
-            <input name="sourceRate" type="number" step="any" value={formData.sourceRate} onChange={onInputChange} required />
-          </label>
-        </div>
-        <div>
-          <label>
-            Latitude:
-            <input readOnly name="latitude" value={formData.latitude} />
-          </label>
-        </div>
-        <div>
-          <label>
-            Longitude:
-            <input readOnly name="longitude" value={formData.longitude} />
-          </label>
-        </div>
-        <button onClick={handleSubmit}>Run Model</button>
-        <button onClick={handleClear} style={{ marginLeft: 10 }}>Clear</button>
-
-        {formData.weather && (
-          <div style={{ marginTop: 10, padding: 10, background: '#e7f3fe' }}>
-            <strong>Weather:</strong>
-            <p>Temperature: {formData.weather.temperature ? formData.weather.temperature.toFixed(1) + ' °C' : 'N/A'}</p>
-            <p>Humidity: {formData.weather.humidity ? formData.weather.humidity + ' %' : 'N/A'}</p>
-            <p>Wind: {formData.weather.windSpeed ? formData.weather.windSpeed.toFixed(1) + ' m/s' : 'N/A'} at {formData.weather.windDirection || 'N/A'}°</p>
-            <p>Condition: {formData.weather.textDescription || 'N/A'}</p>
-          </div>
-        )}
-      </div>
-
-      <div style={{ flexGrow: 1, position: 'relative' }}>
-        <MapContainer center={[29.76, -95.37]} zoom={10} style={{ height: '100vh' }} whenCreated={map => { mapRef.current = map; }}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
-          <LocationSelector onLocation={onLocation} />
-          {markerPos && layers.receptors && <Marker position={markerPos} />}
-          {plume && layers.plume && <GeoJSON data={plume} />}
-        </MapContainer>
-
-        {showAnalysis && (
-          <div style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            maxHeight: '40vh', overflowY: 'auto', background: 'white',
-            padding: 20, borderTop: '2px solid #ccc', zIndex: 1000,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3>Analysis</h3>
-              <button onClick={() => setShowAnalysis(false)}>Hide</button>
             </div>
 
-            {plume ? (
-              <>
-                <div><strong>Plume Hazard Summary:</strong> {plume.hazardSummary ? JSON.stringify(plume.hazardSummary) : 'N/A'}</div>
-                <div><strong>Plume Area (approx):</strong> {calculatePlumeArea(plume) ? calculatePlumeArea(plume).toFixed(5) + ' degrees²' : 'N/A'}</div>
+            <section style={{marginTop:20, whiteSpace:"pre-wrap", fontFamily:"monospace", maxHeight:200, overflowY:"auto", backgroundColor:"#fff", borderRadius:6, border:"1px solid #ccc", padding:10}}>
+              <h3>Analysis</h3>
+              {analysis}
+            </section>
 
-                {receptors.length > 0 && (
-                  <>
-                    <h4>Receptors</h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead><tr><th>Name</th><th>Distance</th><th>Exposure Level</th></tr></thead>
-                      <tbody>
-                        {receptors.map((r, i) => (
-                          <tr key={i}>
-                            <td>{r.name}</td>
-                            <td>{r.distance}</td>
-                            <td>{r.exposureLevel}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                )}
+            <section style={{marginTop:20, backgroundColor:"#fff", padding:10, borderRadius:6, border:"1px solid #ccc"}}>
+              <h3>Weather</h3>
+              <p>Temperature: {form.weather?.temperature ? form.weather.temperature.toFixed(1)+" °C" : "N/A"}</p>
+              <p>Humidity: {form.weather?.humidity ?? "N/A"}</p>
+              <p>Wind: {form.weather?.windSpeed ? form.weather.windSpeed.toFixed(1)+" m/s" : "N/A"}, Direction: {form.weather?.windDirection ?? "N/A"}</p>
+              <p>Condition: {form.weather?.condition ?? "N/A"}</p>
+            </section>
 
-                {placesOfConcern.length > 0 ? (
-                  <>
-                    <h4>Places of Concern</h4>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead><tr><th>Name</th><th>Type</th><th>Coordinates</th></tr></thead>
-                      <tbody>
-                        {placesOfConcern.map((p, i) => (
-                          <tr key={i}>
-                            <td>{p.name}</td>
-                            <td>{p.type}</td>
-                            <td>{p.lat ? p.lat.toFixed(5) : '?'} , {p.lon ? p.lon.toFixed(5) : '?'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                ) : (
-                  <div>No places of concern found within the plume.</div>
-                )}
-
-              </>
-            ) : (
-              <div>No plume data available.</div>
-            )}
-
-          </div>
-        )}
+            <div style={{marginTop:20}}>
+              <button type="submit" style={{marginRight:10}}>Calculate</button>
+              <button type="button" onClick={onClear}>Clear</button>
+            </div>
+          </form>
+        </aside>
+        <main style={{flexGrow:1}}>
+          <MapContainer center={[39.9526, -75.165]} zoom={12} style={{height:"calc(100vh - 64px)", width:"100%"}} whenCreated={map => (mapRef.current = map)}>
+            <LayersControl position="topright">
+              <LayersControl.BaseLayer name="OpenStreetMap" checked>
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              </LayersControl.BaseLayer>
+              <LayersControl.Overlay name="Dispersion" checked>
+                {plume && <GeoJSON data={plume} style={{color:"red", weight:3, opacity:0.5}} />}
+              </LayersControl.Overlay>
+              <LayersControl.Overlay name="Points of Interest" checked>
+                <LayerGroup>
+                  {pois.filter(p => selectedPois.includes(p.type)).map(p => (
+                    <Marker key={p.id} position={[p.lat, p.lon]} icon={getPoiIcon(p.type)}>
+                      <Popup><strong>{p.name}</strong><br/>{p.type}</Popup>
+                    </Marker>
+                  ))}
+                </LayerGroup>
+              </LayersControl.Overlay>
+              <LayersControl.Overlay name="Release Location" checked>
+                {markerPos && <Marker position={markerPos} draggable eventHandlers={{dragend: onDrag}} />}
+              </LayersControl.Overlay>
+            </LayersControl>
+            <LocationSelector onClick={onMapClick} />
+          </MapContainer>
+        </main>
       </div>
-    </div>
+    </>
   );
-}
-
-export default App;
-
-function calculatePlumeArea(plumeGeoJson) {
-  const coords = plumeGeoJson?.geometry?.coordinates?.[0];
-  if (!coords || coords.length < 3) return null;
-  let area = 0;
-  for (let i = 0; i < coords.length - 1; i++) {
-    area += coords[i][0] * coords[i + 1][1] - coords[i + 1][0] * coords[i][1];
-  }
-  return Math.abs(area) / 2;
 }
