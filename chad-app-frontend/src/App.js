@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -7,13 +7,15 @@ import {
   GeoJSON,
   LayersControl,
   LayerGroup,
-  useMapEvents,
   Polyline,
+  useMapEvents,
+  useMap,
 } from "react-leaflet";
 import L from "leaflet";
 import * as turf from "@turf/turf";
 import "leaflet/dist/leaflet.css";
 
+// Leaflet icon fix
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -21,61 +23,6 @@ L.Icon.Default.mergeOptions({
   iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
 });
-
-const poiIcons = {
-  school: L.icon({
-    iconUrl:
-      "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-green.png",
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-  }),
-  hospital: L.icon({
-    iconUrl:
-      "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-red.png",
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-  }),
-  restaurant: L.icon({
-    iconUrl:
-      "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-orange.png",
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-  }),
-  fuel: L.icon({
-    iconUrl:
-      "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-yellow.png",
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-  }),
-  place_of_worship: L.icon({
-    iconUrl:
-      "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-violet.png",
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-  }),
-  bank: L.icon({
-    iconUrl:
-      "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-grey.png",
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-  }),
-  pharmacy: L.icon({
-    iconUrl:
-      "https://cdn.jsdelivr.net/gh/pointhi/leaflet-color-markers@master/img/marker-icon-blue.png",
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-  }),
-  default: L.Icon.Default.prototype,
-};
-
-const getPoiIcon = (type) => poiIcons[type] || poiIcons.default;
 
 const DISPERSION_MODELS = [
   { value: "GAUSSIAN", label: "Gaussian" },
@@ -88,6 +35,14 @@ const AI_MODELS = [
   { value: "codellama:latest", label: "CodeLlama Latest" },
 ];
 
+const DEFAULT_RADIUS = 8046;
+
+const sourceOptions = {
+  GAS: { label: "Gas", rateLabel: "Source Concentration (ppm)" },
+  LIQUID: { label: "Liquid", rateLabel: "Volume (liters/sec)" },
+  CHEMICAL: { label: "Chemical", rateLabel: "Mass (kg)" },
+};
+
 const POI_TYPES = [
   "school",
   "hospital",
@@ -98,15 +53,55 @@ const POI_TYPES = [
   "pharmacy",
 ];
 
-const sourceOptions = {
-  GAS: { label: "Gas", rateLabel: "Source Concentration (ppm)" },
-  LIQUID: { label: "Liquid", rateLabel: "Source Volume (liters/sec)" },
-  CHEMICAL: { label: "Chemical", rateLabel: "Mass (kg)" },
+const AI_ENDPOINT = "http://localhost:11434/api/generate";
+
+const poiIcons = {
+  school: L.icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  }),
+  hospital: L.icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  }),
+  restaurant: L.icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  }),
+  fuel: L.icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  }),
+  place_of_worship: L.icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  }),
+  bank: L.icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  }),
+  pharmacy: L.icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  }),
+  default: L.Icon.Default,
 };
 
-const DEFAULT_RADIUS = 8046;
-const AI_BASE_URL = "http://localhost:11434";
-const AI_GENERATE_ENDPOINT = `${AI_BASE_URL}/api/generate`;
+const getPoiIcon = (type) => poiIcons[type] || poiIcons.default;
 
 function LocationSelector({ onClick }) {
   useMapEvents({
@@ -115,6 +110,39 @@ function LocationSelector({ onClick }) {
     },
   });
   return null;
+}
+
+// Fix Leaflet map size issue on container render/resize
+function ResizeFix() {
+  const map = useMap();
+  useEffect(() => {
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 0);
+  }, [map]);
+  return null;
+}
+
+function generateDownwindCorridor(center, bearing, length, width) {
+  if (!center || bearing === null) return null;
+
+  const rad = ((bearing + 180) % 360) * (Math.PI / 180);
+  const metersToLat = (m) => m / 111320;
+  const metersToLng = (m, lat) => m / (111320 * Math.cos((lat * Math.PI) / 180));
+  const lat = center.lat;
+  const lng = center.lng;
+  const lenLat = metersToLat(length);
+  const lenLng = metersToLng(length, lat);
+  const halfWidthLat = metersToLat(width / 2);
+  const halfWidthLng = metersToLng(width / 2, lat);
+
+  return [
+    [lat + Math.sin(rad + Math.PI / 2) * halfWidthLat, lng + Math.cos(rad + Math.PI / 2) * halfWidthLng], // leftStart
+    [lat + Math.sin(rad) * lenLat + Math.sin(rad + Math.PI / 2) * halfWidthLat, lng + Math.cos(rad) * lenLng + Math.cos(rad + Math.PI / 2) * halfWidthLng], // leftEnd
+    [lat + Math.sin(rad) * lenLat + Math.sin(rad - Math.PI / 2) * halfWidthLat, lng + Math.cos(rad) * lenLng + Math.cos(rad - Math.PI / 2) * halfWidthLng], // rightEnd
+    [lat + Math.sin(rad - Math.PI / 2) * halfWidthLat, lng + Math.cos(rad - Math.PI / 2) * halfWidthLng], // rightStart
+    [lat + Math.sin(rad + Math.PI / 2) * halfWidthLat, lng + Math.cos(rad + Math.PI / 2) * halfWidthLng], // close polygon
+  ];
 }
 
 export default function App() {
@@ -129,15 +157,14 @@ export default function App() {
     poiRadius: DEFAULT_RADIUS,
     weather: null,
   });
-
   const [markerPos, setMarkerPos] = useState(null);
   const [pois, setPois] = useState([]);
   const [selectedPois, setSelectedPois] = useState([]);
   const [receptors, setReceptors] = useState([]);
   const [plume, setPlume] = useState(null);
-  const [analysis, setAnalysis] = useState("");
   const [downwindCorridor, setDownwindCorridor] = useState(null);
-
+  const [analysis, setAnalysis] = useState("");
+  const [impactedPOIs, setImpactedPOIs] = useState([]);
   const mapRef = useRef();
 
   const onChange = (e) => {
@@ -153,15 +180,12 @@ export default function App() {
 
   const onRadiusChange = (e) => {
     const val = Number(e.target.value);
-    if (!isNaN(val) && val > 10) {
+    if (val > 10 && val !== form.poiRadius) {
       setForm((f) => ({ ...f, poiRadius: val }));
-      if (markerPos) {
-        fetchPois(markerPos.lat, markerPos.lng, val);
-      }
     }
   };
 
-  const onMapClick = (latlng) => {
+  const onMarkerUpdate = (latlng) => {
     setMarkerPos(latlng);
     setForm((f) => ({
       ...f,
@@ -170,188 +194,137 @@ export default function App() {
       weather: null,
     }));
     setPlume(null);
-    setAnalysis("");
     setDownwindCorridor(null);
-    fetchPois(latlng.lat, latlng.lng, form.poiRadius);
+    setAnalysis("");
   };
 
   const onDrag = (e) => {
-    onMapClick(e.target.getLatLng());
+    onMarkerUpdate(e.target.getLatLng());
   };
 
-  async function fetchPois(lat, lon, radius) {
-    const query = `[out:json][timeout:25];
-      (
-        node["amenity"](around:${radius},${lat},${lon});
-        way["amenity"](around:${radius},${lat},${lon});
-        relation["amenity"](around:${radius},${lat},${lon});
-      );
-      out center;`;
+  const fetchPOIsInCorridor = useCallback(
+    async (corridor) => {
+      if (!corridor) return;
+      const polygonStr = corridor.map((pt) => pt.join(" ")).join(" ");
+      const query = `[out:json][timeout:25];
+        (
+          node["amenity"](poly:"${polygonStr}");
+          way["amenity"](poly:"${polygonStr}");
+          relation["amenity"](poly:"${polygonStr}");
+        );
+        out center;`;
 
-    const maxRetries = 3;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const res = await fetch("https://overpass-api.de/api/interpreter", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: query,
-        });
-        if (!res.ok) throw new Error(`Overpass API error: ${res.status}`);
-        const data = await res.json();
-        const cleaned = data.elements
-          .map((el) => ({
-            id: el.id,
-            name: el.tags?.name || "Unnamed",
-            type: el.tags?.amenity || "other",
-            lat: el.lat ?? el.center?.lat,
-            lon: el.lon ?? el.center?.lon,
-          }))
-          .filter((p) => p.lat && p.lon);
-        setPois(cleaned);
-        setReceptors(cleaned);
-        return;
-      } catch (err) {
-        if (attempt === maxRetries) {
-          setPois([]);
-          setReceptors([]);
-          alert("Failed to load Points of Interest after multiple attempts");
-        } else {
-          await new Promise((r) => setTimeout(r, 1000 * attempt));
+      const maxRetries = 3;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const res = await fetch(
+            "https://overpass-api.de/api/interpreter",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: query,
+            }
+          );
+          if (!res.ok) throw new Error(`Overpass API error: ${res.status}`);
+          const data = await res.json();
+          const filtered = data.elements
+            .map((el) => ({
+              id: el.id,
+              name: el.tags?.name || "Unnamed",
+              type: el.tags?.amenity || "other",
+              lat: el.lat ?? el.center?.lat,
+              lon: el.lon ?? el.center?.lon,
+            }))
+            .filter((p) => p.lat && p.lon);
+          setPois(filtered);
+          setReceptors(filtered);
+          return;
+        } catch (error) {
+          if (attempt === maxRetries) {
+            alert("Failed to load POIs within downwind corridor after retries");
+            setPois([]);
+            setReceptors([]);
+          } else {
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+          }
         }
       }
-    }
-  }
+    },
+    []
+  );
 
   useEffect(() => {
-    if (!form.latitude || !form.longitude) return;
-
-    let canceled = false;
-
-    async function fetchWeather() {
-      try {
-        const res = await fetch(
-          `https://api.weather.gov/points/${form.latitude},${form.longitude}`
-        );
-        if (!res.ok) throw new Error("Failed to get points");
-        const data = await res.json();
-
-        if (!data.properties?.observationStations)
-          throw new Error("No Observation Stations");
-
-        const stationsRes = await fetch(data.properties.observationStations);
-        if (!stationsRes.ok) throw new Error("Failed to get stations");
-
-        const stationsData = await stationsRes.json();
-
-        if (!stationsData.features?.length) throw new Error("No stations found");
-
-        const stationUrl = stationsData.features[0].id;
-
-        const obsRes = await fetch(`${stationUrl}/observations/latest`);
-        if (!obsRes.ok) throw new Error("Failed to get latest observation");
-
-        const obsData = await obsRes.json();
-
-        if (canceled) return;
-
-        const p = obsData.properties;
-
-        setForm((f) => ({
-          ...f,
-          weather: {
-            temperature: p.temperature?.value,
-            humidity: p.relativeHumidity?.value,
-            windSpeed: p.windSpeed?.value,
-            windDirection: p.windDirection?.value,
-            condition: p.textDescription,
-          },
-        }));
-      } catch (e) {
-        console.error("Weather fetch error:", e);
-        if (!canceled) setForm((f) => ({ ...f, weather: null }));
-      }
-    }
-
-    fetchWeather();
-    const interval = setInterval(fetchWeather, 15000);
-    return () => {
-      canceled = true;
-      clearInterval(interval);
-    };
-  }, [form.latitude, form.longitude]);
-
-  useEffect(() => {
-    if (!markerPos || !form.weather?.windDirection || !form.weather?.windSpeed) {
+    if (
+      !markerPos ||
+      !form.weather?.windDirection ||
+      form.weather.windDirection === null
+    ) {
       setDownwindCorridor(null);
+      setPlume(null);
+      setPois([]);
+      setReceptors([]);
+      setImpactedPOIs([]);
       return;
     }
-
-    const lengthMeters = 4000;
-    const widthMeters = 500;
-
-    const windBearing = (form.weather.windDirection + 180) % 360;
-    const rad = (windBearing * Math.PI) / 180;
-
-    const metersToLat = (m) => m / 111320;
-    const metersToLng = (m, lat) => m / (111320 * Math.cos((lat * Math.PI) / 180));
-
-    const startLat = markerPos.lat;
-    const startLng = markerPos.lng;
-
-    const lengthLat = Math.sin(rad) * metersToLat(lengthMeters);
-    const lengthLng = Math.cos(rad) * metersToLng(lengthMeters, startLat);
-
-    const widthLat = Math.sin(rad + Math.PI / 2) * metersToLat(widthMeters);
-    const widthLng = Math.cos(rad + Math.PI / 2) * metersToLng(widthMeters, startLat);
-
-    const polygon = [
-      [startLat + widthLat, startLng + widthLng],
-      [startLat + lengthLat + widthLat, startLng + lengthLng + widthLng],
-      [startLat + lengthLat - widthLat, startLng + lengthLng - widthLng],
-      [startLat - widthLat, startLng - widthLng],
-      [startLat + widthLat, startLng + widthLng], // close polygon
-    ];
-
-    setDownwindCorridor(polygon);
-  }, [markerPos, form.weather]);
+    const corridor = generateDownwindCorridor(
+      markerPos,
+      form.weather.windDirection,
+      4000,
+      form.poiRadius
+    );
+    setDownwindCorridor(corridor);
+    setPlume({
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [corridor.map((point) => [point[1], point[0]])],
+      },
+    });
+    fetchPOIsInCorridor(corridor);
+  }, [markerPos, form.weather, form.poiRadius, fetchPOIsInCorridor]);
 
   const extractImpactedPOIs = useCallback(() => {
     if (!plume || !pois.length) return [];
-
     try {
-      const plumePolygon = plume;
-
+      const polygonFeature = turf.feature(plume.geometry);
       return pois
         .filter((poi) => {
           if (!poi.lat || !poi.lon) return false;
           const pt = turf.point([poi.lon, poi.lat]);
-          return turf.booleanPointInPolygon(pt, plumePolygon);
+          return turf.booleanPointInPolygon(pt, polygonFeature);
         })
-        .map((poi) => ({
-          name: poi.name,
-          type: poi.type,
+        .map((p) => ({
+          ...p,
           maxConcentration: 42.5,
         }));
     } catch (e) {
-      console.error("Error checking POIs inside plume polygon:", e);
+      console.error("extractImpactedPOIs:", e);
       return [];
     }
   }, [plume, pois]);
 
   useEffect(() => {
-    const impacted = extractImpactedPOIs();
-    if (impacted.length) {
-      const impactSummary =
-        "\nImpacted locations:\n" +
-        impacted
-          .map(
-            (p, idx) =>
-              `${idx + 1}. ${p.name} (${p.type}) — Max Concentration: ${p.maxConcentration}`
-          )
-          .join("\n");
-      setAnalysis((prev) => (prev ? prev + "\n\n" : "") + impactSummary);
+    if (!plume) {
+      setAnalysis("");
+      setImpactedPOIs([]);
+      return;
     }
-  }, [extractImpactedPOIs]);
+    const impacted = extractImpactedPOIs();
+    setImpactedPOIs(impacted);
+    if (!impacted.length) {
+      setAnalysis("No impacted locations within downwind corridor.");
+      return;
+    }
+    const impactText = impacted
+      .map(
+        (poi, idx) =>
+          `${idx + 1}. ${poi.name} (${poi.type}) - Max Concentration: ${poi.maxConcentration}`
+      )
+      .join("\n");
+    setAnalysis(
+      `Potentially impacted locations within downwind corridor:\n${impactText}`
+    );
+  }, [plume, extractImpactedPOIs]);
 
   async function fetchAnalysis(plumeData, receptorsData, hazardSummary) {
     if (!plumeData || !hazardSummary) {
@@ -359,27 +332,27 @@ export default function App() {
       return;
     }
     try {
-      const impacted = extractImpactedPOIs();
-      const impactedText =
-        impacted.length === 0
-          ? "No impacted locations identified."
-          : impacted
-              .map(
-                (p) =>
-                  `- ${p.name} (${p.type}), Max Concentration: ${p.maxConcentration}`
-              )
-              .join("\n");
+      const impactedText = impactedPOIs.length
+        ? impactedPOIs
+            .map(
+              (p) =>
+                `${p.name} (${p.type}), Estimated Max Concentration: ${p.maxConcentration}`
+            )
+            .join("\n")
+        : "No impacted POIs identified";
 
       const prompt = `
-You are an environmental analyst. Given the following chemical plume data:
+You are an environmental analyst.
+
+Given the chemical plume data:
 
 ${JSON.stringify(plumeData)}
 
-And receptors information:
+Receptors:
 
 ${JSON.stringify(receptorsData)}
 
-Summary of hazard:
+Hazard summary:
 
 ${hazardSummary}
 
@@ -387,10 +360,10 @@ Impacted locations:
 
 ${impactedText}
 
-Analyze the potential health impact at each location. Provide a clear, concise summary.
+Please provide a concise analysis of potential impacts.
 `;
 
-      const response = await fetch(AI_GENERATE_ENDPOINT, {
+      const response = await fetch(AI_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -399,19 +372,22 @@ Analyze the potential health impact at each location. Provide a clear, concise s
           stream: false,
         }),
       });
-      if (!response.ok) throw new Error(`AI API error ${response.status}`);
+
+      if (!response.ok)
+        throw new Error(`AI API responded with status ${response.status}`);
+
       const data = await response.json();
-      setAnalysis(data.response || "No response from analysis.");
+      setAnalysis(data.response || "No response from AI");
     } catch (e) {
-      console.error("Error in AI analysis:", e);
-      setAnalysis("AI analysis failed to complete.");
+      console.error("AI analysis failed:", e);
+      setAnalysis("AI analysis failed.");
     }
   }
 
   async function onSubmit(e) {
     e.preventDefault();
     if (!form.chemicalName || !form.latitude || !form.longitude || !form.rate) {
-      alert("Please fill all required fields.");
+      alert("Please fill all required fields");
       return;
     }
     try {
@@ -428,7 +404,7 @@ Analyze the potential health impact at each location. Provide a clear, concise s
           incident: "gas",
         }),
       });
-      if (!res.ok) throw new Error("Dispersion calculation failed.");
+      if (!res.ok) throw new Error("Dispersion calculation failed");
       const data = await res.json();
       setPlume(data.geoJsonPlume ? JSON.parse(data.geoJsonPlume) : null);
       await fetchAnalysis(data.geoJsonPlume, receptors, data.hazardSummary);
@@ -453,20 +429,72 @@ Analyze the potential health impact at each location. Provide a clear, concise s
     setPois([]);
     setReceptors([]);
     setPlume(null);
+    setImpactedPOIs([]);
     setSelectedPois([]);
     setDownwindCorridor(null);
     setAnalysis("");
   }
 
+  // Weather fetching effect - refreshes every 15 seconds
+  useEffect(() => {
+    let canceled = false;
+
+    async function fetchWeather() {
+      if (!form.latitude || !form.longitude) {
+        console.log("No coordinates for weather fetch");
+        return;
+      }
+
+      // Round coordinates to 4 decimals before fetching to avoid redirects
+      const lat = Number(form.latitude).toFixed(4);
+      const lon = Number(form.longitude).toFixed(4);
+      const weatherUrl = `https://api.weather.gov/points/${lat},${lon}`;
+
+      try {
+        const res = await fetch(weatherUrl);
+        if (!res.ok) throw new Error("Failed to get weather point");
+        const data = await res.json();
+        if (!data.properties?.observationStations)
+          throw new Error("No observation stations found");
+        const stationsRes = await fetch(data.properties.observationStations);
+        if (!stationsRes.ok) throw new Error("Failed to get stations");
+        const stationsData = await stationsRes.json();
+        if (!stationsData.features.length) throw new Error("No stations returned");
+        const latestStation = stationsData.features[0].id;
+        const obsRes = await fetch(`${latestStation}/observations/latest`);
+        if (!obsRes.ok) throw new Error("Failed to get latest observation");
+        const obsData = await obsRes.json();
+        if (canceled) return;
+        const p = obsData.properties;
+        setForm((f) => ({
+          ...f,
+          weather: {
+            temperature: p.temperature?.value,
+            humidity: p.relativeHumidity?.value,
+            windSpeed: p.windSpeed?.value,
+            windDirection: p.windDirection?.value,
+            condition: p.textDescription,
+          },
+        }));
+      } catch (error) {
+        console.error("Weather fetch error", error);
+        if (!canceled) setForm((f) => ({ ...f, weather: null }));
+      }
+    }
+
+    fetchWeather();
+    const interval = setInterval(fetchWeather, 15000);
+
+    return () => {
+      canceled = true;
+      clearInterval(interval);
+    };
+  }, [form.latitude, form.longitude]);
+
   return (
     <>
       <header
-        style={{
-          padding: 16,
-          backgroundColor: "#222",
-          color: "white",
-          fontWeight: "bold",
-        }}
+        style={{ padding: 16, backgroundColor: "#222", color: "white", fontWeight: "bold" }}
       >
         Chemical Dispersion Application
       </header>
@@ -516,7 +544,7 @@ Analyze the potential health impact at each location. Provide a clear, concise s
               ))}
             </select>
 
-            <label>Source Type *</label>
+            <label>Source Type</label>
             <select
               name="sourceType"
               value={form.sourceType}
@@ -529,7 +557,7 @@ Analyze the potential health impact at each location. Provide a clear, concise s
               ))}
             </select>
 
-            <label>{sourceOptions[form.sourceType]?.rateLabel}</label>
+            <label>{form.sourceType && sourceOptions[form.sourceType].rateLabel}</label>
             <input name="rate" value={form.rate} onChange={onChange} />
 
             <label>Latitude</label>
@@ -544,7 +572,7 @@ Analyze the potential health impact at each location. Provide a clear, concise s
               value={form.poiRadius}
               type="number"
               min={10}
-              max={100000}
+              max={10000}
               onChange={onRadiusChange}
             />
 
@@ -576,7 +604,7 @@ Analyze the potential health impact at each location. Provide a clear, concise s
               }}
             >
               <h3>Analysis</h3>
-              {analysis}
+              <pre>{analysis}</pre>
             </section>
 
             <section
@@ -621,12 +649,14 @@ Analyze the potential health impact at each location. Provide a clear, concise s
           <MapContainer
             center={[39.9526, -75.165]}
             zoom={12}
-            style={{ height: "calc(100vh - 64px)", width: "100%" }}
+            scrollWheelZoom={true}
+            style={{ height: "100vh", width: "100%" }}
             whenCreated={(map) => (mapRef.current = map)}
           >
+            <ResizeFix />
             <LayersControl position="topright">
               <LayersControl.BaseLayer name="OpenStreetMap" checked>
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
               </LayersControl.BaseLayer>
 
               <LayersControl.Overlay name="Dispersion" checked>
@@ -639,7 +669,7 @@ Analyze the potential health impact at each location. Provide a clear, concise s
                 {downwindCorridor && (
                   <Polyline
                     positions={downwindCorridor}
-                    pathOptions={{ color: "blue", weight: 3, dashArray: "8,8" }}
+                    pathOptions={{ color: "blue", weight: 3, dashArray: "8" }}
                   />
                 )}
               </LayersControl.Overlay>
@@ -647,7 +677,7 @@ Analyze the potential health impact at each location. Provide a clear, concise s
               <LayersControl.Overlay name="Points of Interest" checked>
                 <LayerGroup>
                   {pois
-                    .filter((p) => selectedPois.includes(p.type))
+                    .filter((poi) => selectedPois.includes(poi.type))
                     .map((poi) => (
                       <Marker
                         key={poi.id}
@@ -657,7 +687,14 @@ Analyze the potential health impact at each location. Provide a clear, concise s
                         <Popup>
                           <strong>{poi.name}</strong>
                           <br />
-                          {poi.type}
+                          Type: {poi.type}
+                          <br />
+                          {(() => {
+                            const impact = impactedPOIs.find((i) => i.id === poi.id);
+                            return impact
+                              ? `Estimated Max Concentration: ${impact.maxConcentration}`
+                              : "Impact data not available";
+                          })()}
                         </Popup>
                       </Marker>
                     ))}
@@ -675,7 +712,7 @@ Analyze the potential health impact at each location. Provide a clear, concise s
               </LayersControl.Overlay>
             </LayersControl>
 
-            <LocationSelector onClick={onMapClick} />
+            <LocationSelector onClick={onMarkerUpdate} />
           </MapContainer>
         </main>
       </div>
