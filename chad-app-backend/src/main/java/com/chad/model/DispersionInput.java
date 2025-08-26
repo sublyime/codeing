@@ -13,9 +13,14 @@ public class DispersionInput {
     private String sourceReleaseType;
     private StabilityClass stabilityClass; // Enum defined below
 
+    // New field to hold chemical properties JSON
+    private String chemicalPropertiesJson;
+
     // Enum for chemical incident type
     public enum IncidentType {
-        GAS, LIQUID, VAPOR_CLOUD
+        GAS,
+        LIQUID,
+        VAPOR_CLOUD
     }
 
     // Enum for atmospheric stability classes
@@ -23,12 +28,9 @@ public class DispersionInput {
         A, B, C, D, E, F
     }
 
-    // Constructors (default and parameterized optional)
-
     public DispersionInput() {
+        // Default constructor
     }
-
-    // Getters and setters
 
     public String getModel() {
         return model;
@@ -102,13 +104,19 @@ public class DispersionInput {
         this.stabilityClass = stabilityClass;
     }
 
-    // Getter and setter for sourceReleaseType
-
     public String getSourceReleaseType() {
         return sourceReleaseType;
     }
 
     public void setSourceReleaseType(String sourceReleaseType) {
         this.sourceReleaseType = sourceReleaseType;
+    }
+
+    public String getChemicalPropertiesJson() {
+        return chemicalPropertiesJson;
+    }
+
+    public void setChemicalPropertiesJson(String chemicalPropertiesJson) {
+        this.chemicalPropertiesJson = chemicalPropertiesJson;
     }
 }

@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/dispersion")
-@CrossOrigin(origins = "*") // Allows frontend calls during development
+@CrossOrigin(origins = "*") // Allow CORS from all origins for development
 public class DispersionController {
 
     private final DispersionService dispersionService;
@@ -21,7 +21,6 @@ public class DispersionController {
         String releaseType = input.getSourceReleaseType();
         System.out.println("Source Release Type received: " + releaseType);
 
-        // Example: adjust or validate input according to sourceReleaseType if needed
         if (releaseType != null) {
             switch (releaseType.toUpperCase()) {
                 case "GAS":
@@ -39,7 +38,7 @@ public class DispersionController {
             }
         }
 
-        // Pass input to service method as before
+        // Delegate to your service layer for dispersion calculation
         return dispersionService.runModel(input);
     }
 }

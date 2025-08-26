@@ -3,6 +3,10 @@ package com.chad.service.model.impl;
 import com.chad.model.DispersionInput;
 import com.chad.model.DispersionResult;
 import com.chad.service.model.DispersionModel;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.LinearRing;
@@ -16,30 +20,43 @@ import java.util.Collections;
 public class GaussianDispersionModel implements DispersionModel {
 
     private final GeometryFactory geometryFactory = new GeometryFactory();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public DispersionResult calculate(DispersionInput input) {
-        // Default to gas calculation for compatibility
+        // default to gas calculation
         return calculateGas(input);
     }
 
     public DispersionResult calculateGas(DispersionInput input) {
-        // Example plume for gas release
         return createPlumePolygon(input, 0.02, 0.002);
     }
 
     public DispersionResult calculateLiquid(DispersionInput input) {
-        // Example plume for liquid release with wider spread and shorter downwind
-        // length
         return createPlumePolygon(input, 0.015, 0.004);
     }
 
     public DispersionResult calculateChemical(DispersionInput input) {
-        // Example plume for chemical release with moderate spread and length
+        try {
+            String chemPropsJson = input.getChemicalPropertiesJson();
+            if (chemPropsJson != null && !chemPropsJson.isEmpty()) {
+                JsonNode props = objectMapper.readTree(chemPropsJson);
+                double decayRate = props.path("decayRate").asDouble(0.0);
+                double molecularWeight = props.path("molecularWeight").asDouble(0.0);
+
+                // Adjust plume size based on chemical properties (example)
+                double downwindLength = 0.018 * (1 - decayRate);
+                double crosswindSpread = 0.003 * (1 + molecularWeight / 100);
+
+                return createPlumePolygon(input, downwindLength, crosswindSpread);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            // fallback to default parameters in case of error
+        }
         return createPlumePolygon(input, 0.018, 0.003);
     }
 
-    // Helper method to create plume polygon with given spread parameters
     private DispersionResult createPlumePolygon(DispersionInput input, double downwindLength, double crosswindSpread) {
         double lat = input.getLatitude();
         double lon = input.getLongitude();
@@ -54,15 +71,12 @@ public class GaussianDispersionModel implements DispersionModel {
 
         LinearRing ring = geometryFactory.createLinearRing(coords);
         Polygon polygon = geometryFactory.createPolygon(ring, null);
-
         GeoJsonWriter writer = new GeoJsonWriter();
         String geoJson = writer.write(polygon);
 
         DispersionResult result = new DispersionResult();
-        // Set geojson plume polygon
         result.setGeoJsonPlume(geoJson);
 
-        // Example hazard summary based on type (you can customize)
         double maxConcentration;
         switch (input.getSourceReleaseType() != null ? input.getSourceReleaseType().toUpperCase() : "GAS") {
             case "LIQUID":
@@ -76,7 +90,6 @@ public class GaussianDispersionModel implements DispersionModel {
                 maxConcentration = 42.5;
                 break;
         }
-
         result.setHazardSummary(Collections.singletonMap("maxConcentration", maxConcentration));
         result.setConcentrationContours(Collections.emptyList());
 

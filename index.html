@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chemical Lookup Test</title>
+</head>
+<body>
+  <h1>Chemical Lookup</h1>
+  <input type="text" id="chemicalName" placeholder="Enter chemical name" />
+  <button onclick="lookupChemical()">Lookup</button>
+  <pre id="result"></pre>
+
+  <script>
+    async function lookupChemical() {
+      const name = document.getElementById('chemicalName').value;
+      if (!name) {
+        alert('Please enter chemical name.');
+        return;
+      }
+      const response = await fetch(`http://localhost:8000/chemicals/?name=${encodeURIComponent(name)}`);
+      if (response.ok) {
+        const data = await response.json();
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      } else {
+        document.getElementById('result').textContent = 'Chemical not found.';
+      }
+    }
+  </script>
+</body>
+</html>
