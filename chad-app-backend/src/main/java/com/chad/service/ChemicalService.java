@@ -3,9 +3,11 @@ package com.chad.service;
 import com.chad.model.Chemical;
 import com.chad.repository.ChemicalRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -26,25 +28,24 @@ public class ChemicalService {
         return Optional.of(chemicals.get(0));
     }
 
-    // Overloaded method to accept properties as Object and convert to JSON string
-    // internally
     public Chemical saveOrUpdateChemical(String name, Object propertiesObject) {
-        String propertiesJson;
+        Map<String, Object> propertiesMap;
         try {
-            propertiesJson = objectMapper.writeValueAsString(propertiesObject);
+            propertiesMap = objectMapper.convertValue(propertiesObject, new TypeReference<Map<String, Object>>() {
+            });
         } catch (Exception e) {
-            propertiesJson = "{}"; // fallback to empty JSON object
+            propertiesMap = Map.of(); // fallback to empty map
         }
 
         Optional<Chemical> existing = findByName(name);
         Chemical chemical;
         if (existing.isPresent()) {
             chemical = existing.get();
-            chemical.setProperties(propertiesJson);
+            chemical.setProperties(propertiesMap);
         } else {
             chemical = new Chemical();
             chemical.setName(name);
-            chemical.setProperties(propertiesJson);
+            chemical.setProperties(propertiesMap);
         }
         return chemicalRepository.save(chemical);
     }

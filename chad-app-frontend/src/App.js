@@ -5,7 +5,6 @@ import {
   Marker,
   Popup,
   GeoJSON,
-  LayersControl,
   LayerGroup,
   useMapEvents,
   useMap,
@@ -13,8 +12,18 @@ import {
 import L from "leaflet";
 import * as turf from "@turf/turf";
 import "leaflet/dist/leaflet.css";
+// Custom red icon for source marker
+const redIcon = L.icon({
+  iconUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+});
 
-// Fix Leaflet icon URLs
+
+// Fix Leaflet marker icon issue in React
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -29,18 +38,13 @@ const DISPERSION_MODELS = [
 ];
 
 const AI_MODELS = [
-  { value: "codellama:7b", label: "CodeLlama 7B" },
-  { value: "llama3:70b", label: "Llama 3 70B" },
-  { value: "codellama:latest", label: "CodeLlama Latest" },
+  { value: "codellama:7b", label: "CodeLLaMA 7B" },
+  { value: "llama3:70b", label: "LLaMA 3 70B" },
+  { value: "codellama:latest", label: "CodeLLaMA Latest" },
 ];
 
-const DEFAULT_RADIUS = 8046;
-
-const sourceOptions = {
-  GAS: { label: "Gas", rateLabel: "Source Concentration (ppm)" },
-  LIQUID: { label: "Liquid", rateLabel: "Volume (liters/sec)" },
-  CHEMICAL: { label: "Chemical", rateLabel: "Mass (kg)" },
-};
+const DEFAULT_RADIUS = 2076;
+const AI_ENDPOINT = "http://localhost:8000";
 
 const POI_TYPES = [
   "school",
@@ -51,8 +55,6 @@ const POI_TYPES = [
   "bank",
   "pharmacy",
 ];
-
-const AI_ENDPOINT = "http://localhost:11434/api/generate";
 
 const poiIcons = {
   school: L.icon({
@@ -100,7 +102,40 @@ const poiIcons = {
   default: L.Icon.Default,
 };
 
-const getPoiIcon = (type) => poiIcons[type] || poiIcons.default;
+function getPoiIcon(type) {
+  return poiIcons[type] || poiIcons.default;
+}
+
+const AVAILABLE_COLORS = [
+  "red",
+  "orange",
+  "green",
+  "blue",
+  "violet",
+  "yellow",
+  "grey",
+  "black",
+];
+
+// Helper to build a POI icon from settings (color or custom image)
+function buildPoiIcon(settings) {
+  if (settings?.customIcon) {
+    return L.icon({
+      iconUrl: settings.customIcon,
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+    });
+  }
+  const color = settings?.color || "blue";
+  return L.icon({
+    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
+    shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+  });
+}
 
 function LocationSelector({ onClick }) {
   useMapEvents({
@@ -119,7 +154,6 @@ function ResizeFix() {
   return null;
 }
 
-// Atmospheric stability based on weather
 function getStabilityClass(weather) {
   if (!weather) return "D";
   const { windSpeed, temperature } = weather;
@@ -130,7 +164,6 @@ function getStabilityClass(weather) {
   else return "F";
 }
 
-// Pasquill-Gifford lateral dispersion parameter sigma_y (meters)
 function calculateSigmaY(x, stability) {
   const xKm = x / 1000;
   let sigmaY;
@@ -159,24 +192,25 @@ function calculateSigmaY(x, stability) {
   return sigmaY * 1000;
 }
 
-// Generate wedge-shaped plume corridor polygon around release point
 function generateWedgePlume(center, bearing, length) {
   if (!center || bearing === null) return null;
-  const pointsCount = 10;
+
+  const points = 10;
   const rad = (bearing * Math.PI) / 180;
-  const lat0 = center.lat,
-    lng0 = center.lng;
+  const lat0 = center.lat;
+  const lng0 = center.lng;
+
   const toLat = (m) => m / 111320;
   const toLng = (m, lat) => m / (111320 * Math.cos((lat * Math.PI) / 180));
-  // Use Neutral stability here or adapt dynamically
   const stability = "D";
 
-  let leftEdge = [],
-    rightEdge = [];
-  for (let i = 0; i <= pointsCount; i++) {
-    const dist = length * (i / pointsCount);
+  let leftEdge = [];
+  let rightEdge = [];
+
+  for (let i = 0; i <= points; i++) {
+    const dist = length * (i / points);
     const sigmaY = calculateSigmaY(dist, stability);
-    const width = sigmaY * 3; // 3 sigma width (~99%)
+    const width = sigmaY * 3;
 
     const baseLat = lat0 + toLat(dist * Math.sin(rad));
     const baseLng = lng0 + toLng(dist * Math.cos(rad), lat0);
@@ -190,14 +224,16 @@ function generateWedgePlume(center, bearing, length) {
     leftEdge.push([leftLat, leftLng]);
     rightEdge.push([rightLat, rightLng]);
   }
-  return [center, ...leftEdge, ...rightEdge.reverse(), center];
+
+  return [...leftEdge, ...rightEdge.reverse(), leftEdge[0]];
 }
 
-// Gaussian plume concentration calculation
-function calculateConcentration(Q, U, x, y, sigmaY) {
-  if (x <= 0 || U <= 0 || sigmaY <= 0) return 0;
-  const factor = Q / (2 * Math.PI * U * sigmaY * sigmaY);
-  return factor * Math.exp(-(y * y) / (2 * sigmaY * sigmaY));
+function calculateConcentration(Q, U, x, y) {
+  if (x <= 0 || U <= 0) return 0;
+  const sigmaY = calculateSigmaY(x, "D"); // Use default stability D
+  const denom = Math.sqrt(2 * Math.PI) * sigmaY;
+  const expTerm = Math.exp(-(y * y) / (2 * sigmaY * sigmaY));
+  return (Q / (U * denom)) * expTerm;
 }
 
 export default function App() {
@@ -211,34 +247,52 @@ export default function App() {
     rate: "",
     poiRadius: DEFAULT_RADIUS,
     weather: null,
+    chemicalData: null,
   });
+
+  const [poiSettings, setPoiSettings] = useState(
+    POI_TYPES.reduce((acc, type) => {
+      acc[type] = { color: "blue", customIcon: null };
+      return acc;
+    }, {})
+  );
+
   const [markerPos, setMarkerPos] = useState(null);
   const [pois, setPois] = useState([]);
-  const [selectedPois, setSelectedPois] = useState([]);
+  const [selectedPois, setSelectedPois] = useState(POI_TYPES);
   const [receptors, setReceptors] = useState([]);
   const [plume, setPlume] = useState(null);
-  const [downwindCorridor, setDownwindCorridor] = useState(null);
   const [analysis, setAnalysis] = useState("");
   const [impactedPOIs, setImpactedPOIs] = useState([]);
+
   const [chemicalProperties, setChemicalProperties] = useState({});
+  const [showDownwindCorridor, setShowDownwindCorridor] = useState(true);
+
   const mapRef = useRef();
+
+  // Handlers
 
   const onChange = (e) => {
     const { name, value } = e.target;
     setForm((f) => ({ ...f, [name]: value }));
   };
 
-  const togglePoi = (type) => {
-    setSelectedPois((sp) =>
-      sp.includes(type) ? sp.filter((t) => t !== type) : [...sp, type]
+  const togglePoiSelection = (type) => {
+    setSelectedPois((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
     );
   };
 
-  const onRadiusChange = (e) => {
-    const val = Number(e.target.value);
-    if (val > 10 && val !== form.poiRadius) {
-      setForm((f) => ({ ...f, poiRadius: val }));
-    }
+  const onDrag = (e) => {
+    const latlng = e.target.getLatLng();
+    setMarkerPos(latlng);
+    setForm((f) => ({
+      ...f,
+      latitude: latlng.lat.toFixed(6),
+      longitude: latlng.lng.toFixed(6),
+      chemicalData: null,
+      weather: null,
+    }));
   };
 
   const onMarkerUpdate = (latlng) => {
@@ -247,101 +301,82 @@ export default function App() {
       ...f,
       latitude: latlng.lat.toFixed(6),
       longitude: latlng.lng.toFixed(6),
+      chemicalData: null,
       weather: null,
     }));
-    setPlume(null);
-    setDownwindCorridor(null);
+    // setPlume(null); // keep plume persistent until Clear
     setAnalysis("");
   };
 
-  const onDrag = (e) => {
-    onMarkerUpdate(e.target.getLatLng());
-  };
-
-  // Chemical properties fetch & caching + save to DB
-  async function getChemicalProperties(chemicalName) {
-    if (chemicalProperties[chemicalName]) {
-      return chemicalProperties[chemicalName];
+  async function getChemicalProperties(name) {
+    if (chemicalProperties[name]) {
+      return chemicalProperties[name];
     }
     try {
-      const res = await fetch(
-        `/api/chemicals/properties?name=${encodeURIComponent(chemicalName)}`
-      );
-      if (!res.ok) throw new Error("Failed to fetch chemical properties");
-      const data = await res.json();
-
-      // Cache locally
-      setChemicalProperties((props) => ({ ...props, [chemicalName]: data }));
-
-      // Save to DB
-      await fetch("/api/chemicals/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: chemicalName, properties: data }),
-      });
-
-      return data;
-    } catch (err) {
-      console.error("Chemical properties fetch error:", err);
+      const res = await fetch(`${AI_ENDPOINT}/chemicals/?name=${encodeURIComponent(name)}`);
+      if (!res.ok) throw new Error("Failed fetching chemical data");
+      const json = await res.json();
+      setChemicalProperties((prev) => ({
+        ...prev,
+        [name]: json.data || json,
+      }));
+      setForm((f) => ({ ...f, chemicalData: json.data || json }));
+      return json.data || json;
+    } catch (error) {
+      console.error("Failed to fetch chemical properties", error);
       return null;
     }
   }
 
-  async function fetchPoisInCorridor(polygon) {
-    if (!polygon) return;
+  const fetchPois = useCallback(
+    async (polygon) => {
+      if (!polygon) return;
 
-    const validCoords = polygon.filter(
-      (pt) =>
-        Array.isArray(pt) &&
-        pt.length === 2 &&
-        pt.every((c) => typeof c === "number" && !isNaN(c))
-    );
-    if (validCoords.length === 0) return;
+      const validPoints = polygon.filter(
+        (pt) => Array.isArray(pt) && pt.length === 2 && pt.every((c) => typeof c === "number")
+      );
+      if (validPoints.length === 0) return;
 
-    const polygonStr = validCoords.map((p) => p.join(" ")).join(" ");
-    const query = `[out:json][timeout:25];
-      (node["amenity"](poly:"${polygonStr}");
-       way["amenity"](poly:"${polygonStr}");
-       relation["amenity"](poly:"${polygonStr}"););
-      out center;`;
+      const polygonStr = validPoints.map((p) => p.join(" ")).join(" ");
+      const query = `[out:json][timeout:25];(node["amenity"](poly:"${polygonStr}");way["amenity"](poly:"${polygonStr}");relation["amenity"](poly:"${polygonStr}"););out center;`;
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const res = await fetch("https://overpass-api.de/api/interpreter", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: query,
-        });
-        if (!res.ok) throw new Error(`Overpass API error: ${res.status}`);
-        const data = await res.json();
-        const filteredPois = data.elements
-          .map((el) => ({
-            id: el.id,
-            name: el.tags?.name || "Unnamed",
-            type: el.tags?.amenity || "other",
-            lat: el.lat ?? el.center?.lat,
-            lon: el.lon ?? el.center?.lon,
-          }))
-          .filter((p) => p.lat && p.lon && selectedPois.includes(p.type));
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await fetch("https://overpass-api.de/api/interpreter", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: query,
+          });
+          if (!res.ok) throw new Error("Overpass API error");
+          const data = await res.json();
 
-        setPois(filteredPois);
-        setReceptors(filteredPois);
-        return;
-      } catch (err) {
-        if (attempt === 3) {
-          alert("Failed to fetch POIs after retries");
-          setPois([]);
-          setReceptors([]);
-        } else {
-          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          const filtered = data.elements
+            .map((el) => ({
+              id: el.id,
+              type: el.tags?.amenity || "other",
+              name: el.tags?.name || "Unnamed",
+              lat: el.lat ?? el.center?.lat,
+              lon: el.lon ?? el.center?.lon,
+            }))
+            .filter((p) => p.lat && p.lon && selectedPois.includes(p.type));
+
+          setPois(filtered);
+          setReceptors(filtered);
+          return;
+        } catch (e) {
+          if (attempt === 2) {
+            setPois([]);
+            setReceptors([]);
+          }
+          await new Promise((r) => setTimeout(r, 1000));
         }
       }
-    }
-  }
+    },
+    [selectedPois]
+  );
 
   useEffect(() => {
     if (!markerPos || !form.weather?.windDirection) {
-      setDownwindCorridor(null);
       setPlume(null);
       setPois([]);
       setReceptors([]);
@@ -349,78 +384,54 @@ export default function App() {
       return;
     }
 
-    const wedge = generateWedgePlume(
-      markerPos,
-      form.weather.windDirection,
-      4000
-    );
+    const wedge = generateWedgePlume(markerPos, form.weather.windDirection, 4000);
+    if (!wedge) return;
 
-    setDownwindCorridor(wedge);
+    setPlume({
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [wedge.map((p) => [p[1], p[0]])], // flip lat,lng to lng,lat
+      },
+      properties: {},
+    });
 
-    if (wedge && wedge.every((p) => p.every((c) => typeof c === "number"))) {
-      setPlume({
+    fetchPois(wedge);
+
+    if (mapRef.current) {
+      const layer = L.geoJSON({
         type: "Feature",
         geometry: {
           type: "Polygon",
           coordinates: [wedge.map((p) => [p[1], p[0]])],
         },
       });
-      fetchPoisInCorridor(wedge);
-    } else {
-      setPlume(null);
-      setPois([]);
+      const bounds = layer.getBounds();
+      if (bounds.isValid()) {
+        mapRef.current.fitBounds(bounds);
+      }
     }
-  }, [markerPos, form.weather, selectedPois]);
+  }, [markerPos, form.weather, fetchPois]);
 
   const extractImpactedPois = useCallback(() => {
     if (!plume || !pois.length || !form.weather || !markerPos) return [];
-
     try {
-      const polyFeature = turf.feature(plume.geometry);
       const stability = getStabilityClass(form.weather);
       const windRad = (form.weather.windDirection * Math.PI) / 180;
-
-      const sourcePoint = turf.point([markerPos.lng, markerPos.lat]);
-
+      const sourcePt = turf.point([markerPos.lng, markerPos.lat]);
+      const poly = turf.feature(plume.geometry);
       return pois
-        .filter((p) => p.lat && p.lon)
-        .filter((p) => {
-          const pt = turf.point([p.lon, p.lat]);
-          return turf.booleanPointInPolygon(pt, polyFeature);
-        })
-        .map((poi) => {
-          const receptorPoint = turf.point([poi.lon, poi.lat]);
-          const distMeters =
-            turf.distance(sourcePoint, receptorPoint, { units: "kilometers" }) *
-            1000;
-
-          const dx =
-            (poi.lon - markerPos.lng) * 111320 * Math.cos((markerPos.lat * Math.PI) / 180);
-          const dy = (poi.lat - markerPos.lat) * 111320;
-          const crosswindDist = dx * Math.sin(windRad) - dy * Math.cos(windRad);
-
-          // Use chemical property if available (e.g. decay factor) for advanced modeling in future
-
-          // Calculate concentration with emission rate Q, wind speed U
-          const Q = Number(form.rate) || 1;
-          const U = form.weather.windSpeed || 1;
-          const sigmaY = calculateSigmaY(distMeters, stability);
-
-          const concentration = calculateConcentration(
-            Q,
-            U,
-            distMeters,
-            crosswindDist,
-            sigmaY
-          );
-
-          return {
-            ...poi,
-            maxConcentration: concentration.toFixed(6),
-          };
+        .filter((p) => turf.booleanPointInPolygon(turf.point([p.lon, p.lat]), poly))
+        .map((p) => {
+          const receptor = turf.point([p.lon, p.lat]);
+          const dist = turf.distance(sourcePt, receptor, { units: "meters" });
+          const dx = (p.lon - markerPos.lng) * 111320 * Math.cos((markerPos.lat * Math.PI) / 180);
+          const dy = (p.lat - markerPos.lat) * 111320;
+          const crossWindDist = dx * Math.sin(windRad) - dy * Math.cos(windRad);
+          const conc = calculateConcentration(Number(form.rate), form.weather.windSpeed || 1, dist, crossWindDist);
+          return { ...p, maxConcentration: conc.toFixed(6) };
         });
-    } catch (error) {
-      console.error("extractImpactedPois error:", error);
+    } catch {
       return [];
     }
   }, [plume, pois, form.weather, form.rate, markerPos]);
@@ -434,7 +445,7 @@ export default function App() {
     const impacted = extractImpactedPois();
     setImpactedPOIs(impacted);
     if (impacted.length === 0) setAnalysis("No impacted locations within downwind corridor.");
-    else {
+    else
       setAnalysis(
         `Potentially impacted locations within downwind corridor:\n${impacted
           .map(
@@ -443,64 +454,27 @@ export default function App() {
           )
           .join("\n")}`
       );
-    }
   }, [plume, extractImpactedPois]);
 
-  async function fetchAnalysis(plumeData, receptorsData, hazardSummary) {
+  async function fetchAIAnalysis(plumeData, receptors, hazardSummary) {
     if (!plumeData || !hazardSummary) {
-      setAnalysis("Insufficient data for analysis.");
+      setAnalysis("Insufficient data.");
       return;
     }
+    let receptorNames = receptors.map((r) => r.name).join(", ") || "none";
+    let prompt = `Analyze the impact of the chemical plume.\nPlume: ${JSON.stringify(
+      plumeData
+    )}\nReceptors: ${receptorNames}\nHazard Summary: ${hazardSummary}`;
     try {
-      const impactedText =
-        impactedPOIs.length > 0
-          ? impactedPOIs
-              .map(
-                (p) =>
-                  `${p.name} (${p.type}), Estimated Concentration: ${p.maxConcentration}`
-              )
-              .join("\n")
-          : "No impacted POIs identified";
-
-      const prompt = `
-You are an environmental analyst.
-
-Given the chemical plume data:
-
-${JSON.stringify(plumeData)}
-
-Receptors:
-
-${JSON.stringify(receptorsData)}
-
-Hazard summary:
-
-${hazardSummary}
-
-Impacted locations:
-
-${impactedText}
-
-Please provide a concise analysis of potential impacts.
-      `;
-
-      const response = await fetch(AI_ENDPOINT, {
+      let response = await fetch(AI_ENDPOINT + "/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: form.aiModel,
-          prompt,
-          stream: false,
-        }),
+        body: JSON.stringify({ model: form.aiModel, prompt, stream: false }),
       });
-
-      if (!response.ok)
-        throw new Error(`AI API responded with status ${response.status}`);
-
-      const data = await response.json();
-      setAnalysis(data.response || "No response from AI");
-    } catch (error) {
-      console.error("AI analysis failed:", error);
+      if (!response.ok) throw new Error("AI service error");
+      let data = await response.json();
+      setAnalysis(data.response || "No response");
+    } catch {
       setAnalysis("AI analysis failed.");
     }
   }
@@ -508,19 +482,16 @@ Please provide a concise analysis of potential impacts.
   async function onSubmit(e) {
     e.preventDefault();
     if (!form.chemicalName || !form.latitude || !form.longitude || !form.rate) {
-      alert("Please fill all required fields");
+      alert("Fill all required fields");
       return;
     }
-
-    // Fetch or get cached chemical properties first
     const chemProps = await getChemicalProperties(form.chemicalName);
     if (!chemProps) {
-      alert("Failed to fetch chemical properties");
+      alert("Chemical data fetch failed");
       return;
     }
-
     try {
-      const res = await fetch("/api/dispersion/calculate", {
+      const resp = await fetch("/api/dispersion/calculate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -534,13 +505,12 @@ Please provide a concise analysis of potential impacts.
           chemicalProperties: chemProps,
         }),
       });
-
-      if (!res.ok) throw new Error("Dispersion calculation failed");
-      const data = await res.json();
-      setPlume(data.geoJsonPlume ? JSON.parse(data.geoJsonPlume) : null);
-      await fetchAnalysis(data.geoJsonPlume, receptors, data.hazardSummary);
-    } catch (err) {
-      alert(err.message);
+      if (!resp.ok) throw new Error("Dispersion Calculation Error");
+      const data = await resp.json();
+      setPlume(data.geoJsonPlume ? JSON.parse(data.geoJsonPlume) : plume);
+      fetchAIAnalysis(data.geoJsonPlume, receptors, data.hazardSummary);
+    } catch (error) {
+      alert(error.message);
     }
   }
 
@@ -555,279 +525,253 @@ Please provide a concise analysis of potential impacts.
       rate: "",
       poiRadius: DEFAULT_RADIUS,
       weather: null,
+      chemicalData: null,
     });
     setMarkerPos(null);
     setPois([]);
     setReceptors([]);
-    setPlume(null);
+    // setPlume(null); // keep plume persistent until Clear
     setImpactedPOIs([]);
-    setSelectedPois([]);
-    setDownwindCorridor(null);
+    setSelectedPois(POI_TYPES);
     setAnalysis("");
   }
 
-  // Weather fetch with 15s interval, rounded coords to avoid redirects
+  // Poll weather data every 15s when lat/lon changes
   useEffect(() => {
+    if (!form.latitude || !form.longitude) return;
     let canceled = false;
+
     async function fetchWeather() {
-      if (!form.latitude || !form.longitude) return;
-
-      const lat = Number(form.latitude).toFixed(4);
-      const lon = Number(form.longitude).toFixed(4);
-
       try {
-        const res = await fetch(`https://api.weather.gov/points/${lat},${lon}`);
-        if (!res.ok) throw new Error("Failed to get weather point");
-        const data = await res.json();
-
-        if (!data.properties?.observationStations)
-          throw new Error("No observation stations found");
-
-        const stationsRes = await fetch(data.properties.observationStations);
-        if (!stationsRes.ok) throw new Error("Failed to get stations");
-        const stationsData = await stationsRes.json();
-
+        let res = await fetch(`https://api.weather.gov/points/${form.latitude},${form.longitude}`);
+        if (!res.ok) throw new Error("Weather API Error");
+        let data = await res.json();
+        if (!data.properties.observationStations) throw new Error("No stations");
+        let stationsRes = await fetch(data.properties.observationStations);
+        if (!stationsRes.ok) throw new Error("Stations API Error");
+        let stationsData = await stationsRes.json();
         if (!stationsData.features.length) throw new Error("No stations returned");
-
-        const latestStation = stationsData.features[0].id;
-
-        const obsRes = await fetch(`${latestStation}/observations/latest`);
-        if (!obsRes.ok) throw new Error("Failed to get latest observation");
-
-        const obsData = await obsRes.json();
+        let stationId = stationsData.features[0].id;
+        let obsRes = await fetch(stationId + "/observations/latest");
+        if (!obsRes.ok) throw new Error("Observation API Error");
+        let obsData = await obsRes.json();
         if (canceled) return;
-
-        const p = obsData.properties;
-
         setForm((f) => ({
           ...f,
           weather: {
-            temperature: p.temperature?.value,
-            humidity: p.relativeHumidity?.value,
-            windSpeed: p.windSpeed?.value,
-            windDirection: p.windDirection?.value,
-            condition: p.textDescription,
+            temperature: obsData.properties.temperature?.value,
+            humidity: obsData.properties.relativeHumidity?.value,
+            windSpeed: obsData.properties.windSpeed?.value,
+            windDirection: obsData.properties.windDirection?.value,
+            condition: obsData.properties.textDescription,
           },
         }));
-      } catch (error) {
-        if (!canceled) setForm((f) => ({ ...f, weather: null }));
+      } catch {
+        if (!canceled) setForm(f => ({ ...f, weather: null }));
       }
     }
+
     fetchWeather();
     const interval = setInterval(fetchWeather, 15000);
+
     return () => {
       canceled = true;
       clearInterval(interval);
     };
   }, [form.latitude, form.longitude]);
 
-  // POIs filtered for rendering by selected type and valid coords
-  const visiblePois = pois.filter(
-    (p) => p.lat && p.lon && selectedPois.includes(p.type)
+  const visiblePois = pois.filter((p) => p.lat && p.lon && selectedPois.includes(p.type));
+
+  const POIMarkers = () => (
+    <LayerGroup>
+      {visiblePois.map((poi) => (
+        <Marker key={poi.id} position={[poi.lat, poi.lon]} icon={buildPoiIcon(poiSettings[poi.type])}>
+          <Popup>
+            <b>{poi.name}</b><br />
+            Type: {poi.type}<br />
+            Exposure: {(() => {
+              const matched = impactedPOIs.find((i) => i.id === poi.id);
+              return matched ? matched.maxConcentration : "N/A";
+            })()}
+          </Popup>
+        </Marker>
+      ))}
+    </LayerGroup>
+  );
+
+  const DownwindCorridor = () => (
+    plume && showDownwindCorridor ? (
+      <GeoJSON
+        data={plume}
+        style={{
+          color: "blue",
+          weight: 3,
+          opacity: 0.7,
+          fillOpacity: 0.3,
+          fillColor: "lightblue",
+        }}
+      />
+    ) : null
   );
 
   return (
-    <>
-      <header
+    <div style={{ display: "flex", height: "100vh", fontFamily: "Arial, sans-serif" }}>
+      <aside
         style={{
-          padding: 16,
-          backgroundColor: "#222",
-          color: "white",
-          fontWeight: "bold",
+          width: 320,
+          backgroundColor: "#fafafa",
+          padding: 20,
+          overflowY: "auto",
+          boxShadow: "2px 0 5px rgba(0,0,0,0.1)",
+          zIndex: 2000,
         }}
       >
-        Chemical Dispersion Application
-      </header>
-      <div style={{ display: "flex", height: "calc(100vh - 64px)" }}>
-        <aside
-          style={{
-            width: 420,
-            padding: 20,
-            backgroundColor: "#f7f7f7",
-            borderRight: "1px solid #ccc",
-            overflowY: "auto",
-            boxSizing: "border-box",
-          }}
-        >
-          <form
-            onSubmit={onSubmit}
-            style={{ display: "flex", flexDirection: "column", gap: 12 }}
-          >
-            <label>Chemical Name *</label>
-            <input
-              name="chemicalName"
-              value={form.chemicalName}
-              onChange={onChange}
-              required
-            />
-            <label>Dispersion Model</label>
-            <select
-              name="dispersionModel"
-              value={form.dispersionModel}
-              onChange={onChange}
-            >
-              {DISPERSION_MODELS.map(({ value, label }) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
+        <h2>Controls</h2>
+        <form onSubmit={onSubmit}>
+          <label>
+            Chemical Name
+            <input name="chemicalName" value={form.chemicalName} onChange={onChange} required />
+          </label>
+          <label>
+            Dispersion Model
+            <select name="dispersionModel" value={form.dispersionModel} onChange={onChange}>
+              {DISPERSION_MODELS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
-            <label>AI Model</label>
-            <select name="aiModel" value={form.aiModel} onChange={onChange}>
-              {AI_MODELS.map(({ value, label }) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <label>Source Type</label>
+          </label>
+          <label>
+            Source Type
             <select name="sourceType" value={form.sourceType} onChange={onChange}>
-              {Object.entries(sourceOptions).map(([key, val]) => (
-                <option key={key} value={key}>
-                  {val.label}
-                </option>
+              <option value="GAS">Gas</option>
+              <option value="LIQUID">Liquid</option>
+              <option value="CHEMICAL">Chemical</option>
+            </select>
+          </label>
+          <label>
+            Emission Rate
+            <input name="rate" type="number" value={form.rate} onChange={onChange} step="any" required />
+          </label>
+          <label>
+            AI Model
+            <select name="aiModel" value={form.aiModel} onChange={onChange}>
+              {AI_MODELS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
               ))}
             </select>
-            <label>{form.sourceType && sourceOptions[form.sourceType].rateLabel}</label>
-            <input name="rate" value={form.rate} onChange={onChange} />
-            <label>Latitude</label>
-            <input name="latitude" value={form.latitude} readOnly />
-            <label>Longitude</label>
-            <input name="longitude" value={form.longitude} readOnly />
-            <label>POI Radius (meters)</label>
-            <input
-              name="poiRadius"
-              value={form.poiRadius}
-              type="number"
-              min={10}
-              max={10000}
-              onChange={onRadiusChange}
-            />
-            <label>Toggle Points of Interest</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {POI_TYPES.map((type) => (
-                <label key={type} style={{ flexBasis: "45%" }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedPois.includes(type)}
-                    onChange={() => togglePoi(type)}
-                  />{" "}
-                  {type.replace(/_/g, " ")}
-                </label>
+          </label>
+          <button type="submit">Calculate</button> <button type="button" onClick={onClear}>Clear</button>
+        </form>
+
+        {form.chemicalData && (
+          <div style={{ marginTop: 20, maxHeight: 200, overflowY: "auto", backgroundColor: "#f0f0f0", padding: 10, borderRadius: 6 }}>
+            <h3>Chemical Properties</h3>
+            <ul style={{ paddingLeft: 0, listStyle: "none", fontSize: 12 }}>
+              {Object.entries(form.chemicalData).map(([key, val]) => (
+                <li key={key}><b>{key.replace(/_/g, " ")}:</b> {val?.toString() || "-"}</li>
               ))}
-            </div>
-            <section
-              style={{
-                marginTop: 20,
-                whiteSpace: "pre-wrap",
-                fontFamily: "monospace",
-                maxHeight: 200,
-                overflowY: "auto",
-                backgroundColor: "#fff",
-                borderRadius: 6,
-                border: "1px solid #ccc",
-                padding: 10,
-              }}
-            >
-              <h3>Analysis</h3>
-              <pre>{analysis}</pre>
-            </section>
-            <section
-              style={{
-                marginTop: 20,
-                backgroundColor: "#fff",
-                padding: 10,
-                borderRadius: 6,
-                border: "1px solid #ccc",
-              }}
-            >
-              <h3>Weather</h3>
-              <p>
-                Temperature:{" "}
-                {form.weather?.temperature != null
-                  ? form.weather.temperature.toFixed(1) + " °C"
-                  : "N/A"}
-              </p>
-              <p>Humidity: {form.weather?.humidity ?? "N/A"}</p>
-              <p>
-                Wind Speed:{" "}
-                {form.weather?.windSpeed != null
-                  ? form.weather.windSpeed.toFixed(1) + " m/s"
-                  : "N/A"}
-              </p>
-              <p>Wind Direction: {form.weather?.windDirection ?? "N/A"}</p>
-              <p>Condition: {form.weather?.condition ?? "N/A"}</p>
-            </section>
-            <div style={{ marginTop: 20 }}>
-              <button type="submit" style={{ marginRight: 10 }}>
-                Calculate
-              </button>
-              <button type="button" onClick={onClear}>
-                Clear
-              </button>
-            </div>
-          </form>
-        </aside>
-        <main style={{ flexGrow: 1 }}>
-          <MapContainer
-            center={[39.9526, -75.165]}
-            zoom={12}
-            scrollWheelZoom
-            style={{ height: "100vh", width: "100%" }}
-            whenCreated={(map) => (mapRef.current = map)}
-          >
-            <ResizeFix />
-            <LayersControl position="topright">
-              <LayersControl.BaseLayer name="OpenStreetMap" checked>
-                <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              </LayersControl.BaseLayer>
-              <LayersControl.Overlay name="Dispersion" checked>
-                {plume &&
-                  plume.geometry &&
-                  plume.geometry.coordinates?.length > 0 && (
-                    <GeoJSON
-                      data={plume}
-                      style={{ color: "red", weight: 3, opacity: 0.5 }}
-                    />
-                  )}
-              </LayersControl.Overlay>
-              <LayersControl.Overlay name="Points of Interest" checked>
-                <LayerGroup>
-                  {visiblePois.map((poi) => (
-                    <Marker
-                      key={poi.id}
-                      position={[poi.lat, poi.lon]}
-                      icon={getPoiIcon(poi.type)}
-                    >
-                      <Popup>
-                        <strong>{poi.name}</strong>
-                        <br />
-                        Type: {poi.type}
-                        <br />
-                        Exposure:{" "}
-                        {(() => {
-                          const impact = impactedPOIs.find((i) => i.id === poi.id);
-                          return impact ? impact.maxConcentration : "N/A";
-                        })()}
-                      </Popup>
-                    </Marker>
-                  ))}
-                </LayerGroup>
-              </LayersControl.Overlay>
-              <LayersControl.Overlay name="Release Location" checked>
-                {markerPos && (
-                  <Marker
-                    position={markerPos}
-                    draggable
-                    eventHandlers={{ dragend: onDrag }}
-                  />
-                )}
-              </LayersControl.Overlay>
-            </LayersControl>
-            <LocationSelector onClick={onMarkerUpdate} />
-          </MapContainer>
-        </main>
-      </div>
-    </>
+            </ul>
+          </div>
+        )}
+
+        <h3 style={{ marginTop: 20 }}>Weather</h3>
+        {form.weather ? (
+          <div>
+            <p>Temperature: {form.weather.temperature?.toFixed(1)} °C</p>
+            <p>Humidity: {form.weather.humidity?.toFixed(1)}%</p>
+            <p>Wind Speed: {form.weather.windSpeed?.toFixed(1)} m/s</p>
+            <p>Wind Direction: {form.weather.windDirection}°</p>
+            <p>Condition: {form.weather.condition}</p>
+          </div>
+        ) : (
+          <p>No weather data available</p>
+        )}
+
+        <h3 style={{ marginTop: 20 }}>Layers</h3>
+        <label>
+          <input type="checkbox" checked={showDownwindCorridor} onChange={() => setShowDownwindCorridor(!showDownwindCorridor)} />
+          Show Downwind Corridor
+        </label>
+
+        <h3 style={{ marginTop: 20 }}>Points of Interest</h3>
+        
+{POI_TYPES.map((type) => (
+  <div key={type} style={{ marginBottom: 12 }}>
+    <label>
+      <input
+        type="checkbox"
+        checked={selectedPois.includes(type)}
+        onChange={() => togglePoiSelection(type)}
+      />
+      {type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, " ")}
+    </label>
+    <div>
+      <label>Color: </label>
+      <select
+        value={poiSettings[type]?.color || "blue"}
+        onChange={(e) =>
+          setPoiSettings((prev) => ({
+            ...prev,
+            [type]: { ...prev[type], color: e.target.value },
+          }))
+        }
+      >
+        {AVAILABLE_COLORS.map((c) => (
+          <option key={c} value={c}>{c}</option>
+        ))}
+      </select>
+    </div>
+    <div>
+      <label>Custom Icon: </label>
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              setPoiSettings((prev) => ({
+                ...prev,
+                [type]: { ...prev[type], customIcon: ev.target.result },
+              }));
+            };
+            reader.readAsDataURL(file);
+          }
+        }}
+      />
+    </div>
+  </div>
+))}
+
+
+        <h3 style={{ marginTop: 20 }}>Analysis</h3>
+        <textarea
+          readOnly
+          value={analysis}
+          style={{ width: "100%", height: 100, fontFamily: "monospace", whiteSpace: "pre-wrap", backgroundColor: "#eee" }}
+        />
+      </aside>
+
+      <main style={{ flex: 1 }}>
+        <MapContainer
+          center={form.latitude && form.longitude ? [Number(form.latitude), Number(form.longitude)] : [29.76, -95.37]}
+          zoom={12}
+          style={{ height: "100%", width: "100%" }}
+          whenCreated={(mapInstance) => (mapRef.current = mapInstance)}
+        >
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          {markerPos && (
+            <Marker position={[markerPos.lat, markerPos.lng]} draggable icon={redIcon} eventHandlers={{ dragend: onDrag }}>
+              <Popup>Release Source</Popup>
+            </Marker>
+          )}
+          <POIMarkers />
+          <DownwindCorridor />
+          <LocationSelector onClick={onMarkerUpdate} />
+          <ResizeFix />
+        </MapContainer>
+      </main>
+    </div>
   );
 }

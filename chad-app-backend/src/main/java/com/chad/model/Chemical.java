@@ -2,9 +2,15 @@ package com.chad.model;
 
 import javax.persistence.*;
 import java.time.LocalDateTime;
+import java.util.Map;
+
+import org.hibernate.annotations.Type;
+import org.hibernate.annotations.TypeDef;
+import com.vladmihalcea.hibernate.type.json.JsonBinaryType;
 
 @Entity
 @Table(name = "chemicals", uniqueConstraints = @UniqueConstraint(columnNames = "name"))
+@TypeDef(name = "jsonb", typeClass = JsonBinaryType.class)
 public class Chemical {
 
     @Id
@@ -14,8 +20,9 @@ public class Chemical {
     @Column(nullable = false, unique = true)
     private String name;
 
+    @Type(type = "jsonb")
     @Column(columnDefinition = "jsonb", nullable = false)
-    private String properties;
+    private Map<String, Object> properties;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
@@ -43,11 +50,11 @@ public class Chemical {
         this.name = name;
     }
 
-    public String getProperties() {
+    public Map<String, Object> getProperties() {
         return properties;
     }
 
-    public void setProperties(String properties) {
+    public void setProperties(Map<String, Object> properties) {
         this.properties = properties;
     }
 

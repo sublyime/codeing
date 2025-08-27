@@ -2,6 +2,7 @@ package com.chad.controller;
 
 import com.chad.model.Chemical;
 import com.chad.service.ChemicalService;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,7 +19,7 @@ public class ChemicalController {
 
     // Get chemical properties JSON by chemical name
     @GetMapping("/properties")
-    public ResponseEntity<String> getChemicalProperties(@RequestParam String name) {
+    public ResponseEntity<?> getChemicalProperties(@RequestParam String name) {
         return chemicalService.findByName(name)
                 .map(chemical -> ResponseEntity.ok().body(chemical.getProperties()))
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -27,7 +28,7 @@ public class ChemicalController {
     // DTO class for save request
     public static class ChemicalDto {
         private String name;
-        private Object properties; // Changed from String to Object to avoid JSON parse errors
+        private Object properties; // use Object to accept JSON structure directly
 
         public String getName() {
             return name;
@@ -48,13 +49,15 @@ public class ChemicalController {
 
     // Save or update chemical properties JSON for a chemical name
     @PostMapping("/save")
-    public ResponseEntity<Chemical> saveChemicalProperties(@RequestBody ChemicalDto dto) {
+    public ResponseEntity<?> saveChemicalProperties(@RequestBody ChemicalDto dto) {
         if (dto.getName() == null || dto.getName().isEmpty()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body("Name is required");
         }
+
         if (dto.getProperties() == null) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body("Properties are required");
         }
+
         Chemical saved = chemicalService.saveOrUpdateChemical(dto.getName(), dto.getProperties());
         return ResponseEntity.ok().body(saved);
     }
