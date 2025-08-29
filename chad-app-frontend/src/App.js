@@ -58,6 +58,11 @@ const AI_MODELS = [
   { value: "codellama:latest", label: "CodeLLaMA Latest" },
 ];
 
+const WEATHER_GOV_LAYERS = [
+  { id: "radar", label: "NWS Radar", icon: <CloudRain size={16} />, url: "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png" },
+  { id: "alerts", label: "NWS Warnings", icon: <AlertTriangle size={16} />, url: "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/warn-900913/{z}/{x}/{y}.png" },
+];
+
 const ERG_DATABASE = {
   chlorine: {
     id: "124",
@@ -107,22 +112,6 @@ const POI_TYPES = [
   { id: "pharmacy", label: "Pharmacies", color: "grey" },
 ];
 
-const OPENMETEO_LAYERS = [
-  { id: "precipitation", label: "Precipitation", icon: <CloudRain size={16} />, url: "https://maps.open-meteo.com/v1/precipitation/{z}/{x}/{y}.png" },
-  { id: "cloud_cover", label: "Cloud Cover", icon: <Cloud size={16} />, url: "https://maps.open-meteo.com/v1/cloud_cover/{z}/{x}/{y}.png" },
-  { id: "radar", label: "Weather Radar", icon: <CloudRain size={16} />, url: "https://tile.openweathermap.org/map/radar/{z}/{x}/{y}.png?appid=YOUR_API_KEY" },
-  { id: "alerts", label: "Weather Alerts", icon: <AlertTriangle size={16} />, url: null },
-];
-
-const OPENMETEO_VARIABLES = [
-  { id: "temperature_2m", label: "Temperature (2m)", icon: <Thermometer size={16} /> },
-  { id: "relative_humidity_2m", label: "Humidity (2m)", icon: <CloudRain size={16} /> },
-  { id: "wind_speed_10m", label: "Wind Speed (10m)", icon: <Wind size={16} /> },
-  { id: "wind_direction_10m", label: "Wind Direction (10m)", icon: <Wind size={16} /> },
-  { id: "cloud_cover", label: "Cloud Cover", icon: <Cloud size={16} /> },
-  { id: "precipitation", label: "Precipitation", icon: <CloudRain size={16} /> },
-];
-
 const RIGHT_SIDEBAR_SECTIONS = [
   { id: "incident-details", label: "Incident Details", icon: <MapPin size={24} /> },
   { id: "chat", label: "AI Assistant", icon: <MessageCircle size={24} /> },
@@ -170,6 +159,22 @@ function getStabilityClass(weather) {
   else if (windSpeed < 8) return "D";
   else if (windSpeed < 10) return "E";
   else return "F";
+}
+
+function cardinalToDegrees(direction) {
+  const directions = {
+    N: 0, NNE: 22.5, NE: 45, ENE: 67.5, E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
+    S: 180, SSW: 202.5, SW: 225, WSW: 247.5, W: 270, WNW: 292.5, NW: 315, NNW: 337.5,
+  };
+  return directions[direction] ?? 0;
+}
+
+function parseWindSpeed(windSpeedStr) {
+  if (!windSpeedStr) return 0;
+  const match = windSpeedStr.match(/\d+/); // Find the first number in the string
+  if (!match) return 0;
+  const mph = parseInt(match[0], 10);
+  return mph * 0.44704; // Convert mph to m/s
 }
 
 function calculateSigmaY(x, stability) {
@@ -340,7 +345,9 @@ function ExternalAPIInterface({ isOpen, settings, onSettingsChange }) {
       setTestStatus('error');
     }
   };
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
   return (
     <div style={{ padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: "0.25rem", backgroundColor: "#fff", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
       <h3 style={{ fontSize: "1rem", fontWeight: "bold" }}>External API Configuration</h3>
@@ -549,18 +556,13 @@ export default function App() {
     return {
       downwindCorridor: saved.downwindCorridor ?? true,
       pointsOfInterest: saved.pointsOfInterest ?? false,
-      weatherLayer: saved.weatherLayer ?? false,
       modbus: saved.modbus ?? false,
       externalAPI: saved.externalAPI ?? false,
       erg: saved.erg ?? false,
       chat: saved.chat ?? true,
-      openMeteo: {
-        precipitation: saved.openMeteo?.precipitation ?? false,
-        radar: saved.openMeteo?.radar ?? false,
-        alerts: saved.openMeteo?.alerts ?? false,
-        air_quality: saved.openMeteo?.air_quality ?? false,
-        cloud_cover: saved.openMeteo?.cloud_cover ?? false,
-      },
+      // Replaced openMeteo with new NWS layers
+      radar: saved.radar ?? false, 
+      alerts: saved.alerts ?? false,
     };
   });
 
@@ -595,11 +597,7 @@ export default function App() {
     const saved = localStorage.getItem('modbusSettings');
     return saved ? JSON.parse(saved) : {};
   });
-  const [selectedOpenMeteoVariables, setSelectedOpenMeteoVariables] = useState(() => {
-    const saved = localStorage.getItem('selectedOpenMeteoVariables');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [rightSidebarSection, setRightSidebarSection] = useState(null);
+   const [rightSidebarSection, setRightSidebarSection] = useState(null);
   const [isWeatherFloating, setIsWeatherFloating] = useState(true);
 
   const mapRef = useRef();
@@ -611,8 +609,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('selectedPois', JSON.stringify(selectedPois)); }, [selectedPois]);
   useEffect(() => { localStorage.setItem('externalAPISettings', JSON.stringify(externalAPISettings)); }, [externalAPISettings]);
   useEffect(() => { localStorage.setItem('modbusSettings', JSON.stringify(modbusSettings)); }, [modbusSettings]);
-  useEffect(() => { localStorage.setItem('selectedOpenMeteoVariables', JSON.stringify(selectedOpenMeteoVariables)); }, [selectedOpenMeteoVariables]);
-  useEffect(() => {
+    useEffect(() => {
     if (chatHistoryRef.current) {
       chatHistoryRef.current.scrollTop = chatHistoryRef.current.scrollHeight;
     }
@@ -627,16 +624,7 @@ export default function App() {
     setLayerStates(prev => ({ ...prev, [layer]: !prev[layer] }));
   };
 
-  const toggleOpenMeteoLayer = (layerId) => {
-    setLayerStates(prev => ({
-      ...prev,
-      openMeteo: {
-        ...prev.openMeteo,
-        [layerId]: !prev.openMeteo[layerId],
-      }
-    }));
-  };
-
+  
   const toggleSidebar = () => {
     setExpandedSections(prev => ({ ...prev, sidebar: !prev.sidebar }));
   };
@@ -798,21 +786,44 @@ EMERGENCY RESPONSE: ${ergData.emergencyResponse}
 
   useEffect(() => {
     if (!form.latitude || !form.longitude) return;
+
     let canceled = false;
     async function fetchWeather() {
       try {
-        const variables = OPENMETEO_VARIABLES.map(v => v.id).join(',');
-        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${form.latitude}&longitude=${form.longitude}&hourly=${variables}&current_weather=true&temperature_unit=celsius&wind_speed_unit=ms&timezone=auto`);
-        if (!res.ok) throw new Error("Open-Meteo API Error");
-        const data = await res.json();
-        if (canceled) return;
-        setForm(f => ({
-          ...f,
-          weather: {
-            current_weather: data.current_weather,
-            hourly: data.hourly,
+        // Step 1: Get the grid points URL for the given coordinates
+        const pointsRes = await fetch(`https://api.weather.gov/points/${form.latitude},${form.longitude}`);
+        if (!pointsRes.ok) throw new Error("NWS points API error");
+        const pointsData = await pointsRes.json();
+        
+        const hourlyForecastUrl = pointsData.properties.forecastHourly;
+        if (!hourlyForecastUrl) throw new Error("Hourly forecast URL not found");
+
+        // Step 2: Fetch the hourly forecast using the URL from step 1
+        const forecastRes = await fetch(hourlyForecastUrl);
+        if (!forecastRes.ok) throw new Error("NWS forecast API error");
+        const forecastData = await forecastRes.json();
+        
+        if (canceled || !forecastData.properties.periods.length) return;
+
+        // Step 3: Transform NWS data into the application's expected format
+        const periods = forecastData.properties.periods;
+        const current = periods[0];
+        const transformedData = {
+          current_weather: {
+            temperature: current.temperature,
+            windspeed: parseWindSpeed(current.windSpeed),
+            winddirection: cardinalToDegrees(current.windDirection),
           },
-        }));
+          hourly: {
+            temperature_2m: periods.map(p => p.temperature),
+            wind_speed_10m: periods.map(p => parseWindSpeed(p.windSpeed)),
+            wind_direction_10m: periods.map(p => cardinalToDegrees(p.windDirection)),
+            relative_humidity_2m: periods.map(p => p.relativeHumidity?.value ?? null),
+            precipitation: periods.map(p => p.probabilityOfPrecipitation.value),
+          },
+        };
+
+        setForm(f => ({ ...f, weather: transformedData }));
       } catch (error) {
         if (!canceled) {
           console.error("Weather fetch error:", error);
@@ -820,8 +831,10 @@ EMERGENCY RESPONSE: ${ergData.emergencyResponse}
         }
       }
     }
+
     fetchWeather();
     const interval = setInterval(fetchWeather, 300000); // Fetch every 5 minutes
+
     return () => {
       canceled = true;
       clearInterval(interval);
@@ -856,11 +869,11 @@ Weather: ${form.weather ? `Wind ${form.weather.current_weather.windspeed}m/s @ $
 Impacted Locations: ${impactedPOIs.length}
 ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
       `;
-      const response = await fetch('http://localhost:8000/api/generate', {
+  const response = await fetch('http://localhost:11434/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: form.aiModel,
+          model: 'codellama:7b',
           prompt: `${context}\n\nUser Question: ${chatInput}\n\nPlease provide expert emergency response guidance based on the current situation.`,
           stream: false
         })
@@ -956,85 +969,202 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
         {/* Main Map Container */}
         <main style={{ flex: 1, position: "relative", width: "100%", height: "100%" }}>
           <MapContainer
-            center={form.latitude && form.longitude ? [Number(form.latitude), Number(form.longitude)] : [29.76, -95.37]}
-            zoom={12}
-            style={{ height: "100%", width: "100%", zIndex: 1 }}
-            whenCreated={(mapInstance) => (mapRef.current = mapInstance)}
-          >
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {OPENMETEO_LAYERS.map(layer => layerStates.openMeteo[layer.id] && layer.url && (
-              <TileLayer key={layer.id} url={layer.url} attribution={layer.label + " by Open-Meteo.com"} opacity={0.6} />
-            ))}
-            {markerPos && (
-              <Marker position={[markerPos.lat, markerPos.lng]} draggable icon={redIcon} eventHandlers={{ dragend: onDrag }}>
-                <Popup>
-                  <div>
-                    <b>Release Source</b><br />
-                    Lat: {markerPos.lat.toFixed(6)}<br />
-                    Lng: {markerPos.lng.toFixed(6)}
-                  </div>
-                </Popup>
-              </Marker>
-            )}
-            <POIMarkers />
-            <DownwindCorridor />
-            <LocationSelector onClick={onMarkerUpdate} />
-            <ResizeFix />
-          </MapContainer>
+  center={
+    form.latitude && form.longitude
+      ? [Number(form.latitude), Number(form.longitude)]
+      : [29.76, -95.37]
+  }
+  zoom={12}
+  style={{ height: "100vh", width: "100vw", zIndex: 1 }}
+  whenCreated={(mapInstance) => (mapRef.current = mapInstance)}
+>
+  {/* Always show a base map as fallback to avoid blank maps */}
+  <TileLayer
+    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+    attribution='&copy; <a href="https://osm.org/copyright">OpenStreetMap</a> contributors'
+  />
+
+  {/* Conditionally add custom WeatherGov layers if enabled and have a URL */}
+  {WEATHER_GOV_LAYERS.map(
+    (layer) =>
+      layerStates[layer.id] &&
+      layer.url && (
+        <TileLayer
+          key={layer.id}
+          url={layer.url}
+          attribution={layer.label}
+          opacity={0.6}
+        />
+      )
+  )}
+
+  {/* Marker with popup */}
+  {markerPos && (
+    <Marker
+      position={[markerPos.lat, markerPos.lng]}
+      draggable
+      icon={redIcon}
+      eventHandlers={{ dragend: onDrag }}
+    >
+      <Popup>
+        <div>
+          <b>Release Source</b>
+          <br />
+          Lat: {markerPos.lat.toFixed(6)}
+          <br />
+          Lng: {markerPos.lng.toFixed(6)}
+        </div>
+      </Popup>
+    </Marker>
+  )}
+
+  {/* Other custom layers/components */}
+  <POIMarkers />
+  <DownwindCorridor />
+  <LocationSelector onClick={onMarkerUpdate} />
+  <ResizeFix />
+</MapContainer>
         </main>
 
-        {/* New Right Sidebar */}
-        <aside style={{
-          position: "fixed",
-          top: 0,
-          right: 0,
-          backgroundColor: "#fff",
-          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
-          zIndex: 998,
-          transition: "transform 300ms ease-in-out",
-          width: rightSidebarSection ? "320px" : "64px",
-          height: "100%",
+  {/* New Right Sidebar */}
+<aside
+  style={{
+    position: "fixed",
+    top: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    boxShadow:
+      "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+    zIndex: 998,
+    transition: "width 300ms cubic-bezier(0.4, 0, 0.2, 1)",
+    height: "100vh",
+    display: "flex",
+    flexDirection: "row",
+    width: rightSidebarSection ? "fit-content" : "100px", // autosize when expanded
+    minWidth: 0,
+    maxWidth: "100vw", // never overflow the page
+    overflow: "visible",
+  }}
+>
+  {/* Collapsed icon bar */}
+  <div
+    style={{
+      width: "100px",
+      height: "100%",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      paddingTop: "1rem",
+      backgroundColor: "#e5e7eb",
+      gap: "1rem",
+      flexShrink: 0,
+    }}
+  >
+    <button
+      onClick={() => toggleRightSidebarSection(null)}
+      style={{
+        padding: "0.25rem",
+        borderRadius: "9999px",
+        backgroundColor: "#fff",
+        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+        border: "none",
+        cursor: "pointer",
+      }}
+      aria-label="Toggle Sidebar"
+    >
+      {rightSidebarSection ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+    </button>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "1rem",
+        marginTop: "1rem",
+      }}
+    >
+      <div
+        style={{
           display: "flex",
-          flexDirection: "row",
-        }}>
-          {/* Collapsed icon bar */}
-          <div style={{ width: "64px", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", paddingTop: "1rem", backgroundColor: "#e5e7eb", gap: "1rem" }}>
-            <button
-              onClick={() => toggleRightSidebarSection(null)}
-              style={{ padding: "0.25rem", borderRadius: "9999px", backgroundColor: "#fff", boxShadow: "0 2px 4px rgba(0,0,0,0.1)", border: "none", cursor: "pointer" }}
-              aria-label="Toggle Sidebar"
-            >
-              {rightSidebarSection ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-            </button>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem" }}>
-              <div style={{ display: "flex", alignItems: "center", flexDirection: "column", gap: "0.5rem" }}>
-                <div
-                  style={{ backgroundColor: isWeatherFloating ? "#cbd5e1" : "#3b82f6", borderRadius: "9999px", padding: "0.5rem", color: "#fff", cursor: "pointer", transition: "background-color 200ms" }}
-                  onClick={() => setIsWeatherFloating(!isWeatherFloating)}
-                >
-                  <CloudRain size={24} />
-                </div>
-                <div style={{ fontSize: "0.75rem", fontWeight: "500", color: "#4b5563" }}>Weather</div>
-              </div>
-              {RIGHT_SIDEBAR_SECTIONS.map(section => (
-                <div key={section.id} style={{ display: "flex", alignItems: "center", flexDirection: "column", gap: "0.5rem" }}>
-                  <div
-                    style={{ backgroundColor: rightSidebarSection === section.id ? "#3b82f6" : "#cbd5e1", borderRadius: "9999px", padding: "0.5rem", color: "#fff", cursor: "pointer", transition: "background-color 200ms" }}
-                    onClick={() => {
-                      toggleRightSidebarSection(section.id);
-                      if(isWeatherFloating) setIsWeatherFloating(false);
-                    }}
-                  >
-                    {section.icon}
-                  </div>
-                  <div style={{ fontSize: "0.75rem", fontWeight: "500", color: "#4b5563" }}>{section.label}</div>
-                </div>
-              ))}
-            </div>
+          alignItems: "center",
+          flexDirection: "column",
+          gap: "0.5rem",
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: isWeatherFloating ? "#cbd5e1" : "#3b82f6",
+            borderRadius: "9999px",
+            padding: "0.5rem",
+            color: "#fff",
+            cursor: "pointer",
+            transition: "background-color 200ms",
+          }}
+          onClick={() => setIsWeatherFloating(!isWeatherFloating)}
+        >
+          <CloudRain size={24} />
+        </div>
+        <div
+          style={{
+            fontSize: "0.75rem",
+            fontWeight: "500",
+            color: "#4b5563",
+          }}
+        >
+          Weather
+        </div>
+      </div>
+      {RIGHT_SIDEBAR_SECTIONS.map((section) => (
+        <div
+          key={section.id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexDirection: "column",
+            gap: "0.5rem",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: rightSidebarSection === section.id ? "#3b82f6" : "#cbd5e1",
+              borderRadius: "9999px",
+              padding: "0.5rem",
+              color: "#fff",
+              cursor: "pointer",
+              transition: "background-color 200ms",
+            }}
+            onClick={() => {
+              toggleRightSidebarSection(section.id);
+              if (isWeatherFloating) setIsWeatherFloating(false);
+            }}
+          >
+            {section.icon}
           </div>
-          {/* Expanded Content */}
-          {rightSidebarSection && (
-            <div style={{ flex: 1, padding: "1rem", overflowY: "auto" }}>
+          <div
+            style={{
+              fontSize: "0.75rem",
+              fontWeight: "500",
+              color: "#4b5563",
+            }}
+          >
+            {section.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+  {/* Expanded Content */}
+  {rightSidebarSection && (
+    <div
+      style={{
+        width: "fit-content", // Key: autosize to content
+        maxWidth: "480px",
+        flex: 1,
+        padding: "1rem",
+        overflowY: "auto",
+        boxSizing: "border-box",
+      }}
+    >
+      <div style={{ flex: 1, padding: "1rem", overflowY: "auto" }}>
               {rightSidebarSection === "incident-details" && (
                 <>
                   <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#1f2937", marginBottom: "1rem" }}>Incident Details</h2>
@@ -1088,7 +1218,7 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                     ))}
                   </div>
                   <div style={{ display: "flex" }}>
-                    <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()} placeholder="Ask for guidance..." style={{ flex: 1, padding: "0.25rem", fontSize: "0.75rem", border: "1px solid #d1d5db", borderRadius: "0.25rem 0 0 0.25rem" }} />
+                    <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendChatMessage()} placeholder="Ask for guidance..." style={{ flex: 1, padding: "0.25rem", fontSize: "0.75rem", border: "1px solid #d1d5db", borderRadius: "0.25rem 0 0 0.25rem" }} />
                     <button onClick={sendChatMessage} style={{ padding: "0.25rem 0.5rem", backgroundColor: "#3b82f6", color: "#fff", border: "none", borderRadius: "0 0.25rem 0.25rem 0", cursor: "pointer" }}><Send size={12} /></button>
                   </div>
                 </div>
@@ -1098,19 +1228,19 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                 <>
                   <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#1f2937", marginBottom: "1rem" }}>Map Layers</h2>
                   <div style={{ padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: "0.25rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                    <h3 style={{ fontSize: "1rem", fontWeight: "bold", marginBottom: "0.5rem" }}>Open-Meteo Layers</h3>
-                    {OPENMETEO_LAYERS.map(layer => layerStates.openMeteo[layer.id] && layer.url && (
-                      <label key={layer.id} style={{ display: "flex", alignItems: "center", marginBottom: "0.5rem" }}>
-                        <input
-                          type="checkbox"
-                          checked={layerStates.openMeteo[layer.id]}
-                          onChange={() => toggleOpenMeteoLayer(layer.id)}
-                          style={{ marginRight: "0.5rem" }}
-                        />
-                        {layer.icon}
-                        <span style={{ marginLeft: "0.25rem" }}>{layer.label}</span>
-                      </label>
-                    ))}
+                                        <h3 style={{ fontSize: "1rem", fontWeight: "bold", marginBottom: "0.5rem" }}>Weather Layers</h3>
+                  {WEATHER_GOV_LAYERS.map(layer => (
+                    <label key={layer.id} style={{ display: "flex", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!layerStates[layer.id]}
+                        onChange={() => toggleLayer(layer.id)}
+                        style={{ marginRight: "0.5rem" }}
+                      />
+                      {layer.icon}
+                      <span style={{ marginLeft: "0.25rem" }}>{layer.label}</span>
+                    </label>
+                  ))}
                     <h3 style={{ fontSize: "1rem", fontWeight: "bold", marginTop: "1rem", marginBottom: "0.5rem" }}>Response Layers</h3>
                     <label style={{ display: "flex", alignItems: "center" }}>
                       <input type="checkbox" checked={layerStates.downwindCorridor} onChange={() => toggleLayer('downwindCorridor')} style={{ marginRight: "0.5rem" }} />Downwind Corridor
@@ -1121,15 +1251,15 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                     {layerStates.pointsOfInterest && (
                       <div style={{ marginTop: "0.75rem", padding: "0.5rem", backgroundColor: "#f9fafb", borderRadius: "0.25rem" }}>
                         <h4 style={{ fontSize: "0.875rem", fontWeight: "500", marginBottom: "0.5rem" }}>POI Types</h4>
-                        {POI_TYPES.map((type) => (
-                          <label key={type.id} style={{ display: "flex", alignItems: "center", fontSize: "0.875rem", marginBottom: "0.25rem" }}>
-                            <input type="checkbox" checked={selectedPois.includes(type.id)} onChange={() => {
-                                setSelectedPois(prev => prev.includes(type.id) ? prev.filter(t => t !== type.id) : [...prev, type.id]);
-                              }} style={{ marginRight: "0.5rem" }} />{type.label}
-                          </label>
-                        ))}
-                      </div>
-                    )}
+                  {POI_TYPES.map((type) => (
+                    <label key={type.id} style={{ display: "flex", alignItems: "center", fontSize: "0.875rem", marginBottom: "0.25rem" }}>
+                      <input type="checkbox" checked={selectedPois.includes(type.id)} onChange={() => {
+                          setSelectedPois(prev => prev.includes(type.id) ? prev.filter(t => t !== type.id) : [...prev, type.id]);
+                        }} style={{ marginRight: "0.5rem" }} />{type.label}
+                    </label>
+                  ))}
+                </div>
+              )}
                   </div>
                 </>
               )}
@@ -1148,7 +1278,10 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                     <textarea readOnly value={hazardAnalysis} style={{ width: "100%", height: "8rem", padding: "0.5rem", fontSize: "0.75rem", fontFamily: "monospace", backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: "0.25rem", resize: "none" }} placeholder="ERG guidance will appear here when chemical is selected..." />
                     <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid #e5e7eb" }}>
                       <div style={{ display: "flex", alignItems: "center", marginBottom: "0.5rem" }}><Database size={16} style={{ marginRight: "0.25rem" }} /><span style={{ fontSize: "0.875rem", fontWeight: "500" }}>Search ERG</span></div>
-                      <ERGSearch onSelect={(chem) => setForm((f) => ({ ...f, chemicalName: chem.name }))} />
+{/* Use the ERGSearch component defined above */}
+<ERGSearch onSelect={(result) => {
+  setForm(f => ({ ...f, chemicalName: result.name }));
+}} />
                     </div>
                   </div>
                 </>
@@ -1172,18 +1305,19 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                   </div>
                 </>
               )}
-            </div>
-          )}
-        </aside>
+      </div>
+    </div>
+      )}
+   </aside>
 
         {/* Floating Weather Window */}
         {isWeatherFloating && (
           <DraggableAndResizableWeatherWindow
-            initialPosition={{ x: window.innerWidth - 350, y: 150 }}
-            initialSize={{ width: 300, height: 250 }}
+            initialPosition={{ x: 20, y: 20 }} // Changed from the top-right calculation
+            initialSize={{ width: 216, height: 302 }}
             onDock={() => {
               setIsWeatherFloating(false);
-              setRightSidebarSection('layers'); // Dock to a relevant section, or create a new one
+              setRightSidebarSection('layers');
             }}
           >
             <WindRoseDisplay weather={form.weather} />

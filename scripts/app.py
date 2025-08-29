@@ -7,6 +7,8 @@ import psycopg2
 import json
 from datetime import datetime
 import pubchempy as pcp
+import pdfplumber
+from typing import List
 
 app = FastAPI()
 
@@ -104,3 +106,24 @@ async def generate(request: AIRequest):
     # TODO: Replace with actual AI inference logic
     simulated_response = f"Simulated output for model '{request.model}' and prompt: {request.prompt}"
     return {"response": simulated_response}
+
+
+PDF_PATH = r"C:\codeing\docs\ERG2024-Eng-Web-a.pdf"
+
+def search_pdf(term: str) -> List[dict]:
+    results = []
+    with pdfplumber.open(PDF_PATH) as pdf:
+        for i, page in enumerate(pdf.pages):
+            text = page.extract_text()
+            if text and term.lower() in text.lower():
+                snippet = "\n".join([line for line in text.splitlines() if term.lower() in line.lower()])
+                results.append({
+                    "page": i + 1,
+                    "snippet": snippet[:500]
+                })
+    return results
+
+@app.get("/erg/search")
+def erg_search(q: str = Query(..., min_length=2)):
+    matches = search_pdf(q)
+    return {"results": matches}
