@@ -29,6 +29,8 @@ import {
   Cloud,
   MapPin,
   Minimize,
+  X,
+  Move,
 } from "lucide-react";
 
 // Fix Leaflet marker icon issue in React
@@ -84,99 +86,13 @@ const ERG_DATABASE = {
     initialIsolation: "60m in all directions",
     protectiveDistance: { small: "500m downwind during day, 1.6km at night", large: "1.6km downwind during day, 4.0km at night" },
     healthHazards: "Toxic by inhalation. Causes severe respiratory and eye irritation.",
-    fireExplosion: "Flammable gas. May ignite. Cylinders may rupture when heated.",
-    publicSafety: "Evacuate area. Keep upwind. Deny entry except to authorized personnel.",
-    emergencyResponse: "Stop leak if safe to do so. Use water spray to reduce vapors.",
-  },
-  "sulfur dioxide": {
-    id: "123",
-    name: "Sulfur Dioxide",
-    guide: "123",
-    hazard: "Toxic Gas",
-    initialIsolation: "100m in all directions",
-    protectiveDistance: { small: "800m downwind during day, 2.4km at night", large: "2.4km downwind during day, 8.0km at night" },
-    healthHazards: "Toxic by inhalation. Causes severe respiratory irritation.",
-    fireExplosion: "Does not burn. Cylinders may rupture under heat exposure.",
+    fireExplosion: "Does not burn but may form explosive mixtures with air.",
     publicSafety: "Evacuate area. Keep upwind. Deny entry except to authorized personnel.",
     emergencyResponse: "Stop leak if safe to do so. Use water spray to reduce vapors.",
   },
 };
 
-const POI_TYPES = [
-  { id: "school", label: "Schools", color: "blue" },
-  { id: "hospital", label: "Hospitals", color: "red" },
-  { id: "restaurant", label: "Restaurants", color: "orange" },
-  { id: "fuel", label: "Fuel Stations", color: "yellow" },
-  { id: "place_of_worship", label: "Places of Worship", color: "violet" },
-  { id: "bank", label: "Banks", color: "green" },
-  { id: "pharmacy", label: "Pharmacies", color: "grey" },
-];
-
-const RIGHT_SIDEBAR_SECTIONS = [
-  { id: "incident-details", label: "Incident Details", icon: <MapPin size={24} /> },
-  { id: "chat", label: "AI Assistant", icon: <MessageCircle size={24} /> },
-  { id: "layers", label: "Map Layers", icon: <Layers size={24} /> },
-  { id: "analysis", label: "Impact Analysis", icon: <Activity size={24} /> },
-  { id: "erg", label: "ERG Analysis", icon: <AlertTriangle size={24} /> },
-  { id: "data-interfaces", label: "Data Interfaces", icon: <Settings size={24} /> },
-];
-function buildPoiIcon(settings) {
-  const color = settings?.color || "blue";
-  return L.icon({
-    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
-    shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-  });
-}
-
-function LocationSelector({ onClick }) {
-  useMapEvents({
-    click(e) {
-      onClick(e.latlng);
-    },
-  });
-  return null;
-}
-
-function ResizeFix() {
-  const map = useMap();
-  useEffect(() => {
-    setTimeout(() => map.invalidateSize(), 0);
-  }, [map]);
-  return null;
-}
-
-function getStabilityClass(weather) {
-  if (!weather || !weather.hourly) return "D";
-  const { wind_speed_10m } = weather.hourly;
-  // Use the first value as a simplified current condition
-  const windSpeed = wind_speed_10m[0];
-  const temperature = weather.hourly.temperature_2m[0];
-  if (windSpeed < 2) return temperature > 25 ? "A" : "B";
-  else if (windSpeed < 5) return "C";
-  else if (windSpeed < 8) return "D";
-  else if (windSpeed < 10) return "E";
-  else return "F";
-}
-
-function cardinalToDegrees(direction) {
-  const directions = {
-    N: 0, NNE: 22.5, NE: 45, ENE: 67.5, E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
-    S: 180, SSW: 202.5, SW: 225, WSW: 247.5, W: 270, WNW: 292.5, NW: 315, NNW: 337.5,
-  };
-  return directions[direction] ?? 0;
-}
-
-function parseWindSpeed(windSpeedStr) {
-  if (!windSpeedStr) return 0;
-  const match = windSpeedStr.match(/\d+/); // Find the first number in the string
-  if (!match) return 0;
-  const mph = parseInt(match[0], 10);
-  return mph * 0.44704; // Convert mph to m/s
-}
-
+// helper: sigma-y calculation used by Gaussian
 function calculateSigmaY(x, stability) {
   const xKm = x / 1000;
   let sigmaY;
@@ -316,62 +232,43 @@ function ModbusInterface({ isOpen, settings, onSettingsChange }) {
   };
   if (!isOpen) return null;
   return (
-    <div style={{ padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: "0.25rem", backgroundColor: "#fff", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-      <h3 style={{ fontSize: "1rem", fontWeight: "bold" }}>Modbus Interface</h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <div>
-          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "500", marginBottom: "0.25rem" }}>Serial Port</label>
-          <select style={{ width: "100%", padding: "0.5rem", border: "1px solid #d1d5db", borderRadius: "0.25rem" }}>
-            <option>COM1</option>
-            <option>COM2</option>
-          </select>
-        </div>
-        <button onClick={connectToDevice} style={{ width: "100%", padding: "0.5rem", borderRadius: "0.25rem", backgroundColor: "#3b82f6", color: "#fff", border: "none", cursor: "pointer" }}>
-          {connected ? 'Connected' : 'Connect'}
+    <div style={{ padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: "0.25rem", backgroundColor: "#fff" }}>
+      <h3 style={{ fontSize: "1rem", fontWeight: "bold", marginBottom: "0.5rem" }}>Modbus Interface</h3>
+      <div>
+        <button
+          onClick={connectToDevice}
+          style={{
+            padding: "0.5rem",
+            borderRadius: "0.25rem",
+            backgroundColor: connected ? "#22c55e" : "#3b82f6",
+            color: "#fff",
+            border: "none",
+            cursor: "pointer",
+            marginBottom: "0.5rem"
+          }}
+        >
+          {connected ? "Connected" : "Connect"}
         </button>
       </div>
     </div>
   );
 }
 
-function ExternalAPIInterface({ isOpen, settings, onSettingsChange }) {
-  const [testStatus, setTestStatus] = useState(null);
-  const testConnection = async () => {
-    try {
-      setTestStatus('testing');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setTestStatus('success');
-    } catch {
-      setTestStatus('error');
-    }
-  };
-  if (!isOpen) {
-    return null;
-  }
+function ReportsSection({ onGenerate }) {
+  const REPORT_TYPES = [
+    { id: 'type1', label: 'Report Type 1' },
+    { id: 'type2', label: 'Report Type 2' },
+  ];
   return (
-    <div style={{ padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: "0.25rem", backgroundColor: "#fff", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-      <h3 style={{ fontSize: "1rem", fontWeight: "bold" }}>External API Configuration</h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <div>
-          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "500", marginBottom: "0.25rem" }}>API Endpoint</label>
-          <input
-            type="url"
-            placeholder="https://api.example.com"
-            style={{ width: "100%", padding: "0.5rem", border: "1px solid #d1d5db", borderRadius: "0.25rem" }}
-            value={settings.apiEndpoint || ''}
-            onChange={(e) => onSettingsChange({...settings, apiEndpoint: e.target.value})}
-          />
-        </div>
-        <button
-          onClick={testConnection}
-          style={{ width: "100%", padding: "0.5rem", backgroundColor: "#3b82f6", color: "#fff", borderRadius: "0.25rem", border: "none", cursor: "pointer" }}
-          disabled={testStatus === 'testing'}
-        >
-          {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
-        </button>
-        {testStatus === 'success' && (<div style={{ padding: "0.5rem", backgroundColor: "#dcfce7", color: "#166534", borderRadius: "0.25rem", fontSize: "0.875rem" }}>Connection successful!</div>)}
-        {testStatus === 'error' && (<div style={{ padding: "0.5rem", backgroundColor: "#fee2e2", color: "#991b1b", borderRadius: "0.25rem", fontSize: "0.875rem" }}>Connection failed!</div>)}
-      </div>
+    <div style={{ padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: "0.25rem", backgroundColor: "#fff" }}>
+      <h3 style={{ fontSize: "1rem", fontWeight: "bold", marginBottom: "0.5rem" }}>Generate Report</h3>
+      <ul style={{ listStyle: "none", padding: 0 }}>
+        {REPORT_TYPES.map(r => (
+          <li key={r.id} style={{ marginBottom: "0.5rem" }}>
+            <button onClick={() => onGenerate(r.id)} style={{ width: "100%", padding: "0.5rem", borderRadius: "0.25rem", backgroundColor: "#3b82f6", color: "#fff", border: "none", cursor: "pointer" }}>{r.label}</button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -384,8 +281,7 @@ function ERGSearch({ onSelect }) {
     const found = Object.values(ERG_DATABASE)
       .filter((chem) =>
         chem.name.toLowerCase().includes(term) || String(chem.guide).includes(term)
-      )
-      .map((chem) => ({ ...chem, ergGuide: chem.guide }));
+      );
     setResults(found);
   };
   return (
@@ -409,7 +305,7 @@ function ERGSearch({ onSelect }) {
             style={{ padding: "0.5rem", cursor: "pointer", borderRadius: "0.25rem", transition: "background-color 0.2s", backgroundColor: "#f9fafb" }}
             onClick={() => onSelect(result)}
           >
-            Guide {result.ergGuide}: {result.name}
+            {result.name} (Guide {result.guide})
           </li>
         ))}
       </ul>
@@ -417,14 +313,96 @@ function ERGSearch({ onSelect }) {
   );
 }
 
-const DraggableAndResizableWeatherWindow = ({ children, onDock, initialPosition, initialSize }) => {
-  const [isDragging, setIsDragging] = useState(false);
-  const [isResizing, setIsResizing] = useState(false);
+// Helper constants
+const POI_TYPES = [
+  { id: "hospital", label: "Hospital", color: "#e11d48" },
+  { id: "school", label: "School", color: "#6366f1" },
+  { id: "fire_station", label: "Fire Station", color: "#f59e42" },
+  { id: "police", label: "Police", color: "#0ea5e9" },
+  { id: "other", label: "Other", color: "#64748b" },
+];
+
+const RIGHT_SIDEBAR_SECTIONS = [
+  { id: "incident-details", label: "Incident Details", icon: <AlertTriangle size={20} /> },
+  { id: "chat", label: "AI Assistant", icon: <Send size={20} /> },
+  { id: "layers", label: "Map Layers", icon: <Layers size={20} /> },
+  { id: "analysis", label: "Impact Analysis", icon: <Activity size={20} /> },
+  { id: "erg", label: "ERG Guide", icon: <Database size={20} /> },
+  { id: "data-interfaces", label: "Data Interfaces", icon: <Wifi size={20} /> },
+  { id: "locate-me", label: "Locate Me", icon: <MapPin size={20} /> },
+  { id: "reports", label: "Reports", icon: <Database size={20} /> },
+];
+
+// Utility functions
+function getStabilityClass(weather) {
+  return "D";
+}
+
+function parseWindSpeed(windSpeed) {
+  if (typeof windSpeed === "number") return windSpeed;
+  if (typeof windSpeed === "string") {
+    const match = windSpeed.match(/([\d.]+)/);
+    return match ? parseFloat(match[1]) : 0;
+  }
+  return 0;
+}
+
+function cardinalToDegrees(cardinal) {
+  if (typeof cardinal === "number") return cardinal;
+  const map = {
+    N: 0, NNE: 22.5, NE: 45, ENE: 67.5, E: 90, ESE: 112.5, SE: 135, SSE: 157.5,
+    S: 180, SSW: 202.5, SW: 225, WSW: 247.5, W: 270, WNW: 292.5, NW: 315, NNW: 337.5
+  };
+  return map[cardinal] ?? 0;
+}
+
+function buildPoiIcon(settings) {
+  return L.icon({
+    iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    ...(settings?.customIcon ? { iconUrl: settings.customIcon } : {}),
+  });
+}
+
+function LocationSelector({ onClick }) {
+  useMapEvents({
+    click(e) {
+      if (onClick) onClick(e.latlng);
+    },
+  });
+  return null;
+}
+
+function ResizeFix() {
+  const map = useMap();
+  useEffect(() => {
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [map]);
+  return null;
+}
+
+
+// Draggable and resizable weather window component
+function DraggableAndResizableWeatherWindow({ children, initialPosition, initialSize, onDock }) {
   const [position, setPosition] = useState(initialPosition);
   const [size, setSize] = useState(initialSize);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const windowRef = useRef(null);
 
-  const handleDragStart = (e) => {
+  const handleMouseDown = (e) => {
+    if (e.target.closest('.resize-handle')) return;
     setIsDragging(true);
     setDragStart({
       x: e.clientX - position.x,
@@ -432,113 +410,149 @@ const DraggableAndResizableWeatherWindow = ({ children, onDock, initialPosition,
     });
   };
 
-  const handleResizeStart = (e) => {
+  const handleResizeMouseDown = (e) => {
     e.stopPropagation();
     setIsResizing(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: size.width,
+      height: size.height
+    });
   };
 
   const handleMouseMove = useCallback((e) => {
     if (isDragging) {
-      const newX = e.clientX - dragStart.x;
-      const newY = e.clientY - dragStart.y;
-      setPosition({ x: newX, y: newY });
-    } else if (isResizing) {
-      const newWidth = Math.max(200, size.width + (e.clientX - dragStart.x));
-      const newHeight = Math.max(150, size.height + (e.clientY - dragStart.y));
-      setSize({ width: newWidth, height: newHeight });
-      setDragStart({ x: e.clientX, y: e.clientY });
+      setPosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
     }
-  }, [isDragging, isResizing, dragStart, size]);
+    if (isResizing) {
+      const newWidth = Math.max(200, resizeStart.width + (e.clientX - resizeStart.x));
+      const newHeight = Math.max(150, resizeStart.height + (e.clientY - resizeStart.y));
+      setSize({
+        width: newWidth,
+        height: newHeight
+      });
+    }
+  }, [isDragging, isResizing, dragStart, resizeStart]);
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = () => {
     setIsDragging(false);
     setIsResizing(false);
-  }, []);
+  };
 
   useEffect(() => {
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [handleMouseMove, handleMouseUp]);
+    if (isDragging || isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, isResizing, handleMouseMove]);
 
   return (
     <div
+      ref={windowRef}
       style={{
-        position: 'fixed',
+        position: 'absolute',
         left: position.x,
         top: position.y,
         width: size.width,
         height: size.height,
-        backgroundColor: '#fff',
-        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+        backgroundColor: '#ffffff',
+        border: '1px solid #e5e7eb',
         borderRadius: '0.5rem',
-        padding: '1rem',
+        boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
+        zIndex: 1000,
         display: 'flex',
         flexDirection: 'column',
-        zIndex: 1000,
-        resize: 'both',
-        overflow: 'hidden',
+        minWidth: '200px',
+        minHeight: '150px',
       }}
     >
+      {/* Title bar */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          cursor: 'move',
-          paddingBottom: '0.5rem',
+          padding: '0.5rem',
+          backgroundColor: '#f8fafc',
           borderBottom: '1px solid #e5e7eb',
-          marginBottom: '0.5rem',
+          borderRadius: '0.5rem 0.5rem 0 0',
+          cursor: 'move',
+          userSelect: 'none',
         }}
-        onMouseDown={handleDragStart}
+        onMouseDown={handleMouseDown}
       >
-        <h3 style={{ fontSize: "1rem", fontWeight: "bold", color: "#1f2937" }}>Weather Conditions</h3>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Move size={14} color="#6b7280" />
+          <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>
+            Weather Data
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
           <button
             onClick={onDock}
             style={{
               padding: '0.25rem',
-              borderRadius: '9999px',
-              backgroundColor: '#e5e7eb',
+              backgroundColor: 'transparent',
               border: 'none',
               cursor: 'pointer',
+              borderRadius: '0.25rem',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
             }}
-            aria-label="Dock Window"
+            title="Dock to sidebar"
           >
-            <Minimize size={16} />
+            <Minimize size={14} color="#6b7280" />
           </button>
         </div>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {children}
-      </div>
+
+      {/* Content area */}
       <div
         style={{
-          position: 'absolute',
-          right: '0',
-          bottom: '0',
-          width: '12px',
-          height: '12px',
-          cursor: 'se-resize',
+          flex: 1,
+          padding: '0.75rem',
+          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
         }}
-        onMouseDown={handleResizeStart}
+      >
+        {children}
+      </div>
+
+      {/* Resize handle */}
+      <div
+        className="resize-handle"
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          width: '16px',
+          height: '16px',
+          cursor: 'se-resize',
+          background: 'linear-gradient(-45deg, transparent 0%, transparent 40%, #d1d5db 40%, #d1d5db 60%, transparent 60%)',
+        }}
+        onMouseDown={handleResizeMouseDown}
       />
     </div>
   );
-};
-
+}
 
 export default function App() {
+  // main app state (preserves many of your original defaults)
   const [form, setForm] = useState(() => {
-    const saved = localStorage.getItem('emergencyResponseForm');
-    return saved ? JSON.parse(saved) : {
+    const saved = JSON.parse(localStorage.getItem('emergencyResponseForm') || "null");
+    return saved || {
       chemicalName: "",
       dispersionModel: DISPERSION_MODELS[0].value,
       aiModel: AI_MODELS[0].value,
@@ -552,7 +566,7 @@ export default function App() {
   });
 
   const [layerStates, setLayerStates] = useState(() => {
-    const saved = JSON.parse(localStorage.getItem('layerStates')) || {};
+    const saved = JSON.parse(localStorage.getItem('layerStates') || "{}");
     return {
       downwindCorridor: saved.downwindCorridor ?? true,
       pointsOfInterest: saved.pointsOfInterest ?? false,
@@ -560,56 +574,57 @@ export default function App() {
       externalAPI: saved.externalAPI ?? false,
       erg: saved.erg ?? false,
       chat: saved.chat ?? true,
-      // Replaced openMeteo with new NWS layers
-      radar: saved.radar ?? false, 
+      radar: saved.radar ?? false,
       alerts: saved.alerts ?? false,
     };
   });
 
-  const [expandedSections, setExpandedSections] = useState({
-    sidebar: true,
-  });
+  const [expandedSections, setExpandedSections] = useState({ sidebar: true });
 
   const [markerPos, setMarkerPos] = useState(null);
   const [pois, setPois] = useState([]);
   const [plume, setPlume] = useState(null);
   const [impactedPOIs, setImpactedPOIs] = useState([]);
   const [poiSettings, setPoiSettings] = useState(() => {
-    const saved = localStorage.getItem('poiSettings');
-    return saved ? JSON.parse(saved) : POI_TYPES.reduce((acc, type) => {
+    const saved = JSON.parse(localStorage.getItem('poiSettings') || "null");
+    return saved || POI_TYPES.reduce((acc, type) => {
       acc[type.id] = { color: type.color, customIcon: null };
       return acc;
     }, {});
   });
   const [selectedPois, setSelectedPois] = useState(() => {
-    const saved = localStorage.getItem('selectedPois');
-    return saved ? JSON.parse(saved) : POI_TYPES.map(t => t.id);
+    const saved = JSON.parse(localStorage.getItem('selectedPois') || "null");
+    return saved || POI_TYPES.map(t => t.id);
   });
   const [analysis, setAnalysis] = useState("");
   const [hazardAnalysis, setHazardAnalysis] = useState("");
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [externalAPISettings, setExternalAPISettings] = useState(() => {
-    const saved = localStorage.getItem('externalAPISettings');
-    return saved ? JSON.parse(saved) : {};
+    const saved = JSON.parse(localStorage.getItem('externalAPISettings') || "null");
+    return saved || {};
   });
   const [modbusSettings, setModbusSettings] = useState(() => {
-    const saved = localStorage.getItem('modbusSettings');
-    return saved ? JSON.parse(saved) : {};
+    const saved = JSON.parse(localStorage.getItem('modbusSettings') || "null");
+    return saved || {};
   });
-   const [rightSidebarSection, setRightSidebarSection] = useState(null);
+
+  // IMPORTANT: initialize to null (not string "null")
+  const [rightSidebarSection, setRightSidebarSection] = useState(null);
   const [isWeatherFloating, setIsWeatherFloating] = useState(true);
 
   const mapRef = useRef();
   const chatHistoryRef = useRef();
 
+  // persist some state
   useEffect(() => { localStorage.setItem('emergencyResponseForm', JSON.stringify(form)); }, [form]);
   useEffect(() => { localStorage.setItem('layerStates', JSON.stringify(layerStates)); }, [layerStates]);
   useEffect(() => { localStorage.setItem('poiSettings', JSON.stringify(poiSettings)); }, [poiSettings]);
   useEffect(() => { localStorage.setItem('selectedPois', JSON.stringify(selectedPois)); }, [selectedPois]);
   useEffect(() => { localStorage.setItem('externalAPISettings', JSON.stringify(externalAPISettings)); }, [externalAPISettings]);
   useEffect(() => { localStorage.setItem('modbusSettings', JSON.stringify(modbusSettings)); }, [modbusSettings]);
-    useEffect(() => {
+
+  useEffect(() => {
     if (chatHistoryRef.current) {
       chatHistoryRef.current.scrollTop = chatHistoryRef.current.scrollHeight;
     }
@@ -624,7 +639,6 @@ export default function App() {
     setLayerStates(prev => ({ ...prev, [layer]: !prev[layer] }));
   };
 
-  
   const toggleSidebar = () => {
     setExpandedSections(prev => ({ ...prev, sidebar: !prev.sidebar }));
   };
@@ -647,8 +661,8 @@ export default function App() {
     setMarkerPos(latlng);
     setForm((f) => ({
       ...f,
-      latitude: latlng.lat.toFixed(6),
-      longitude: latlng.lng.toFixed(6),
+      latitude: Number(latlng.lat).toFixed(6),
+      longitude: Number(latlng.lng).toFixed(6),
     }));
     setAnalysis("");
   };
@@ -665,7 +679,7 @@ export default function App() {
       const res = await fetch("https://overpass-api.de/api/interpreter", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: query,
+        body: `data=${encodeURIComponent(query)}`,
       });
       if (!res.ok) throw new Error("Overpass API error");
       const data = await res.json();
@@ -794,7 +808,7 @@ EMERGENCY RESPONSE: ${ergData.emergencyResponse}
         const pointsRes = await fetch(`https://api.weather.gov/points/${form.latitude},${form.longitude}`);
         if (!pointsRes.ok) throw new Error("NWS points API error");
         const pointsData = await pointsRes.json();
-        
+
         const hourlyForecastUrl = pointsData.properties.forecastHourly;
         if (!hourlyForecastUrl) throw new Error("Hourly forecast URL not found");
 
@@ -802,7 +816,7 @@ EMERGENCY RESPONSE: ${ergData.emergencyResponse}
         const forecastRes = await fetch(hourlyForecastUrl);
         if (!forecastRes.ok) throw new Error("NWS forecast API error");
         const forecastData = await forecastRes.json();
-        
+
         if (canceled || !forecastData.properties.periods.length) return;
 
         // Step 3: Transform NWS data into the application's expected format
@@ -841,6 +855,17 @@ EMERGENCY RESPONSE: ${ergData.emergencyResponse}
     };
   }, [form.latitude, form.longitude]);
 
+  // Sync markerPos with latitude/longitude
+  useEffect(() => {
+    if (form.latitude && form.longitude) {
+      const lat = Number(form.latitude);
+      const lng = Number(form.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        setMarkerPos({ lat, lng });
+      }
+    }
+  }, [form.latitude, form.longitude]);
+
 
   async function getChemicalProperties(name) {
     try {
@@ -869,7 +894,7 @@ Weather: ${form.weather ? `Wind ${form.weather.current_weather.windspeed}m/s @ $
 Impacted Locations: ${impactedPOIs.length}
 ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
       `;
-  const response = await fetch('http://localhost:11434/api/generate', {
+      const response = await fetch('http://localhost:11434/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -895,17 +920,101 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
       alert("Fill all required fields");
       return;
     }
+    const latitude = Number(form.latitude);
+    const longitude = Number(form.longitude);
+    if (isNaN(latitude) || isNaN(longitude)) {
+      alert("Latitude and Longitude must be valid numbers");
+      return;
+    }
     const chemProps = await getChemicalProperties(form.chemicalName);
     if (!chemProps) {
       alert("Chemical data fetch failed");
       return;
     }
-    if (plume) {
-      setAnalysis(prev => prev + "\n\nDispersion calculation completed using " + form.dispersionModel + " model.");
+    const payload = {
+      model: form.dispersionModel,
+      chemicalName: form.chemicalName,
+      latitude,
+      longitude,
+      sourceReleaseRate: Number(form.rate),
+      windSpeed: form.weather?.hourly?.wind_speed_10m[0] || 1,
+      windDirection: form.weather?.hourly?.wind_direction_10m[0] || 0,
+      sourceReleaseType: form.sourceType,
+      stabilityClass: getStabilityClass(form.weather),
+      chemicalPropertiesJson: JSON.stringify(chemProps),
+    };
+    try {
+      const res = await fetch("/api/dispersion/calculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      console.log("Backend response status:", res.status);
+      const text = await res.text();
+      console.log("Backend response text:", text);
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (jsonErr) {
+        console.error("Failed to parse backend response as JSON:", jsonErr);
+        setPlume(null);
+        setAnalysis("Dispersion calculation failed: backend returned invalid JSON.");
+        return;
+      }
+      if (result.geoJsonPlume) {
+        try {
+          const geoJsonRaw = typeof result.geoJsonPlume === "string" ? JSON.parse(result.geoJsonPlume) : result.geoJsonPlume;
+          let geoJson;
+          if (geoJsonRaw.type === "Polygon") {
+            geoJson = {
+              type: "Feature",
+              geometry: geoJsonRaw,
+              properties: { persistent: true },
+            };
+          } else {
+            geoJson = geoJsonRaw;
+          }
+          setPlume(geoJson);
+          setAnalysis("Dispersion calculation completed using " + form.dispersionModel + " model.");
+        } catch (geoErr) {
+          console.error("Failed to parse geoJsonPlume:", geoErr);
+          setPlume(null);
+          setAnalysis("Dispersion calculation failed: invalid plume GeoJSON.");
+        }
+      } else {
+        setPlume(null);
+        setAnalysis("Dispersion calculation failed: no plume returned.");
+      }
+    } catch (err) {
+      console.error("Backend plume error:", err);
+      setPlume(null);
+      setAnalysis("Dispersion calculation failed: backend error.");
+    }
+    // quick frontend plume
+    if (markerPos && form.weather?.hourly?.wind_direction_10m) {
+      const organicPlumeCoords = generateOrganicPlume(
+        markerPos,
+        form.weather.hourly.wind_direction_10m[0],
+        4000,
+        { ...form.weather, chemicalData: chemProps }
+      );
+      if (organicPlumeCoords) {
+        const plumeFeature = {
+          type: "Feature",
+          geometry: {
+            type: "Polygon",
+            coordinates: [organicPlumeCoords],
+          },
+          properties: {
+            persistent: true,
+          },
+        };
+        setPlume(plumeFeature);
+      }
     }
   }
 
-  function onClear() {
+  async function onClear() {
     setForm({
       chemicalName: "",
       dispersionModel: DISPERSION_MODELS[0].value,
@@ -947,224 +1056,304 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
     </LayerGroup>
   );
 
-  const DownwindCorridor = () => (
-    plume && layerStates.downwindCorridor ? (
-      <GeoJSON
-        key={`plume-${markerPos?.lat}-${markerPos?.lng}-${form.weather?.current_weather?.winddirection}`}
-        data={plume}
-        style={{
-          color: "red",
-          weight: 2,
-          opacity: 0.8,
-          fillOpacity: 0.2,
-          fillColor: "orange",
-        }}
-      />
-    ) : null
-  );
+  // Downwind corridor generation
+  const [downwindCorridor, setDownwindCorridor] = useState(null);
+  const generateDownwindCorridor = useCallback(() => {
+    if (!markerPos || !form.weather) return null;
+    const windDir = form.weather?.hourly?.wind_direction_10m?.[0] || 0;
+    const windSpeed = form.weather?.hourly?.wind_speed_10m?.[0] || 1;
+    const stability = getStabilityClass(form.weather);
+    const wedgeLength = 4000 + windSpeed * 100;
+    const wedgeAngle = stability === 'A' ? 60 : stability === 'B' ? 45 : 30;
+    const center = [markerPos.lat, markerPos.lng];
+    const coords = [];
+    coords.push(center);
+    for (let i = -wedgeAngle / 2; i <= wedgeAngle / 2; i += wedgeAngle / 10) {
+      const angleRad = ((windDir + i) * Math.PI) / 180;
+      const latOffset = (wedgeLength / 111320) * Math.cos(angleRad);
+      const lngOffset = (wedgeLength / (40075000 * Math.cos(center[0] * Math.PI / 180) / 360)) * Math.sin(angleRad);
+      coords.push([center[0] + latOffset, center[1] + lngOffset]);
+    }
+    coords.push(center);
+    return {
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [coords],
+      },
+      properties: {},
+    };
+  }, [markerPos, form.weather]);
+
+  useEffect(() => {
+    function updateCorridor() {
+      setDownwindCorridor(generateDownwindCorridor());
+    }
+    updateCorridor();
+    const interval = setInterval(updateCorridor, 15000);
+    return () => clearInterval(interval);
+  }, [generateDownwindCorridor]);
+
+  useEffect(() => {
+    setPlume(null);
+  }, [markerPos]);
+
+  const DownwindCorridor = () => {
+    // This 'if' statement now checks the layer toggle AND the corridor data
+    if (layerStates.downwindCorridor && downwindCorridor && downwindCorridor.geometry && downwindCorridor.geometry.type === "Polygon") {
+      return (
+        <GeoJSON
+          key={`downwind-${markerPos?.lat}-${markerPos?.lng}-${form.weather?.hourly?.wind_direction_10m?.[0]}`}
+          data={downwindCorridor}
+          // The style is now a visible orange dashed line
+          style={{
+            color: "orange",
+            weight: 2,
+            opacity: 0.8,
+            fillOpacity: 0.2,
+            fillColor: "orange",
+            dashArray: '5, 5'
+          }}
+        />
+      );
+    }
+    return null;
+  };
+
+
+  // Locate me feature uses navigator.geolocation and also snaps map
+  function handleLocateMe(setFormLocal, setMarkerPosLocal) {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          setFormLocal(f => ({ ...f, latitude: lat.toFixed(6), longitude: lng.toFixed(6) }));
+          setMarkerPosLocal({ lat, lng });
+          if (mapRef.current) {
+            mapRef.current.setView([lat, lng], 14);
+          }
+        },
+        (err) => {
+          alert("Unable to get your location.");
+        }
+      );
+    }
+  }
+
+  // Map creation: store ref
+  const mapWhenCreated = (mapInstance) => {
+    mapRef.current = mapInstance;
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#f3f4f6", fontFamily: "sans-serif", color: "#374151" }}>
-      <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "row", overflow: "hidden" }}>
         {/* Main Map Container */}
-        <main style={{ flex: 1, position: "relative", width: "100%", height: "100%" }}>
+        <main style={{ flex: 1, position: "relative", height: "100%" }}>
           <MapContainer
-  center={
-    form.latitude && form.longitude
-      ? [Number(form.latitude), Number(form.longitude)]
-      : [29.76, -95.37]
-  }
-  zoom={12}
-  style={{ height: "100vh", width: "100vw", zIndex: 1 }}
-  whenCreated={(mapInstance) => (mapRef.current = mapInstance)}
->
-  {/* Always show a base map as fallback to avoid blank maps */}
-  <TileLayer
-    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-    attribution='&copy; <a href="https://osm.org/copyright">OpenStreetMap</a> contributors'
-  />
+            center={
+              form.latitude && form.longitude
+                ? [Number(form.latitude), Number(form.longitude)]
+                : [29.76, -95.37]
+            }
+            zoom={12}
+            style={{ height: "100%", width: "100%", zIndex: 1 }}
+            whenCreated={mapWhenCreated}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://osm.org/copyright">OpenStreetMap</a> contributors'
+            />
+            {/* Add NWS layers if toggled */}
+            {WEATHER_GOV_LAYERS.map(
+              (layer) =>
+                layerStates[layer.id] &&
+                layer.url && (
+                  <TileLayer
+                    key={layer.id}
+                    url={layer.url}
+                    attribution={layer.label}
+                    opacity={0.6}
+                  />
+                )
+            )}
 
-  {/* Conditionally add custom WeatherGov layers if enabled and have a URL */}
-  {WEATHER_GOV_LAYERS.map(
-    (layer) =>
-      layerStates[layer.id] &&
-      layer.url && (
-        <TileLayer
-          key={layer.id}
-          url={layer.url}
-          attribution={layer.label}
-          opacity={0.6}
-        />
-      )
-  )}
+            {markerPos && (
+              <Marker
+                position={[markerPos.lat, markerPos.lng]}
+                draggable
+                icon={redIcon}
+                eventHandlers={{ dragend: onDrag }}
+              >
+                <Popup>
+                  <div>
+                    <b>Release Source</b>
+                    <br />
+                    Lat: {markerPos.lat.toFixed(6)}
+                    <br />
+                    Lng: {markerPos.lng.toFixed(6)}
+                  </div>
+                </Popup>
+              </Marker>
+            )}
 
-  {/* Marker with popup */}
-  {markerPos && (
-    <Marker
-      position={[markerPos.lat, markerPos.lng]}
-      draggable
-      icon={redIcon}
-      eventHandlers={{ dragend: onDrag }}
-    >
-      <Popup>
-        <div>
-          <b>Release Source</b>
-          <br />
-          Lat: {markerPos.lat.toFixed(6)}
-          <br />
-          Lng: {markerPos.lng.toFixed(6)}
-        </div>
-      </Popup>
-    </Marker>
-  )}
+            <POIMarkers />
 
-  {/* Other custom layers/components */}
-  <POIMarkers />
-  <DownwindCorridor />
-  <LocationSelector onClick={onMarkerUpdate} />
-  <ResizeFix />
-</MapContainer>
+            <DownwindCorridor />
+
+            {plume && plume.geometry && plume.geometry.type === "Polygon" && (
+              <GeoJSON
+                key={`plume-purple-${markerPos?.lat}-${markerPos?.lng}-${form.weather?.hourly?.wind_direction_10m?.[0]}`}
+                data={plume}
+                style={{
+                  color: "purple",
+                  weight: 2,
+                  opacity: 1,
+                  fillOpacity: 0.5,
+                  fillColor: "purple",
+                }}
+              />
+            )}
+
+            <LocationSelector onClick={onMarkerUpdate} />
+            <ResizeFix />
+          </MapContainer>
         </main>
 
-  {/* New Right Sidebar */}
-<aside
-  style={{
-    position: "fixed",
-    top: 0,
-    right: 0,
-    backgroundColor: "#fff",
-    boxShadow:
-      "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
-    zIndex: 998,
-    transition: "width 300ms cubic-bezier(0.4, 0, 0.2, 1)",
-    height: "100vh",
-    display: "flex",
-    flexDirection: "row",
-    width: rightSidebarSection ? "fit-content" : "100px", // autosize when expanded
-    minWidth: 0,
-    maxWidth: "100vw", // never overflow the page
-    overflow: "visible",
-  }}
->
-  {/* Collapsed icon bar */}
-  <div
-    style={{
-      width: "100px",
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      paddingTop: "1rem",
-      backgroundColor: "#e5e7eb",
-      gap: "1rem",
-      flexShrink: 0,
-    }}
-  >
-    <button
-      onClick={() => toggleRightSidebarSection(null)}
-      style={{
-        padding: "0.25rem",
-        borderRadius: "9999px",
-        backgroundColor: "#fff",
-        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-        border: "none",
-        cursor: "pointer",
-      }}
-      aria-label="Toggle Sidebar"
-    >
-      {rightSidebarSection ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
-    </button>
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "1rem",
-        marginTop: "1rem",
-      }}
-    >
-      <div
-        style={{
+        {/* Sidebar: width adjusts depending on whether a section is expanded */}
+        <aside style={{
+          width: rightSidebarSection ? 420 : 100,
           display: "flex",
-          alignItems: "center",
-          flexDirection: "column",
-          gap: "0.5rem",
-        }}
-      >
-        <div
-          style={{
-            backgroundColor: isWeatherFloating ? "#cbd5e1" : "#3b82f6",
-            borderRadius: "9999px",
-            padding: "0.5rem",
-            color: "#fff",
-            cursor: "pointer",
-            transition: "background-color 200ms",
-          }}
-          onClick={() => setIsWeatherFloating(!isWeatherFloating)}
-        >
-          <CloudRain size={24} />
-        </div>
-        <div
-          style={{
-            fontSize: "0.75rem",
-            fontWeight: "500",
-            color: "#4b5563",
-          }}
-        >
-          Weather
-        </div>
-      </div>
-      {RIGHT_SIDEBAR_SECTIONS.map((section) => (
-        <div
-          key={section.id}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            flexDirection: "column",
-            gap: "0.5rem",
-          }}
-        >
+          height: "100%",
+          backgroundColor: "#f9fafb",
+          borderLeft: "1px solid #e5e7eb",
+          flexShrink: 0,
+          boxSizing: "border-box",
+          transition: 'width 0.3s ease-in-out',
+        }}>
+          {/* Collapsed icon bar */}
           <div
             style={{
-              backgroundColor: rightSidebarSection === section.id ? "#3b82f6" : "#cbd5e1",
-              borderRadius: "9999px",
-              padding: "0.5rem",
-              color: "#fff",
-              cursor: "pointer",
-              transition: "background-color 200ms",
-            }}
-            onClick={() => {
-              toggleRightSidebarSection(section.id);
-              if (isWeatherFloating) setIsWeatherFloating(false);
-            }}
-          >
-            {section.icon}
-          </div>
-          <div
-            style={{
-              fontSize: "0.75rem",
-              fontWeight: "500",
-              color: "#4b5563",
+              width: "100px",
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              paddingTop: "1rem",
+              backgroundColor: "#e5e7eb",
+              gap: "1rem",
+              flexShrink: 0,
             }}
           >
-            {section.label}
+            <button
+              onClick={() =>
+                toggleRightSidebarSection(rightSidebarSection ? null : "incident-details")
+              }
+              style={{
+                padding: "0.25rem",
+                borderRadius: "9999px",
+                backgroundColor: "#fff",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                border: "none",
+                cursor: "pointer",
+              }}
+              aria-label="Toggle Sidebar"
+            >
+              {rightSidebarSection ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
+            </button>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "1rem",
+                marginTop: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  flexDirection: "column",
+                  gap: "0.5rem",
+                }}
+              >
+                <div
+                  style={{
+                    backgroundColor: isWeatherFloating ? "#3b82f6" : "#cbd5e1",
+                    borderRadius: "9999px",
+                    padding: "0.5rem",
+                    color: "#fff",
+                    cursor: "pointer",
+                    transition: "background-color 200ms",
+                  }}
+                  onClick={() => setIsWeatherFloating(!isWeatherFloating)}
+                >
+                  <CloudRain size={24} />
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.75rem",
+                    fontWeight: "500",
+                    color: "#4b5563",
+                  }}
+                >
+                  Weather
+                </div>
+              </div>
+              {RIGHT_SIDEBAR_SECTIONS.map((section) => (
+                <div
+                  key={section.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    flexDirection: "column",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <div
+                    style={{
+                      backgroundColor: rightSidebarSection === section.id ? "#3b82f6" : "#cbd5e1",
+                      borderRadius: "9999px",
+                      padding: "0.5rem",
+                      color: "#fff",
+                      cursor: "pointer",
+                      transition: "background-color 200ms",
+                    }}
+                    onClick={() => {
+                      toggleRightSidebarSection(section.id);
+                      if (isWeatherFloating) setIsWeatherFloating(false);
+                    }}
+                  >
+                    {section.icon}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.75rem",
+                      fontWeight: "500",
+                      color: "#4b5563",
+                    }}
+                  >
+                    {section.label}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
-  </div>
-  {/* Expanded Content */}
-  {rightSidebarSection && (
-    <div
-      style={{
-        width: "fit-content", // Key: autosize to content
-        maxWidth: "480px",
-        flex: 1,
-        padding: "1rem",
-        overflowY: "auto",
-        boxSizing: "border-box",
-      }}
-    >
-      <div style={{ flex: 1, padding: "1rem", overflowY: "auto" }}>
+
+          {/* Expanded Content */}
+          {rightSidebarSection && (
+            <div
+              style={{
+                width: "320px",
+                maxWidth: "480px",
+                flex: 1,
+                padding: "1rem",
+                overflowY: "auto",
+                boxSizing: "border-box",
+              }}
+            >
               {rightSidebarSection === "incident-details" && (
                 <>
                   <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#1f2937", marginBottom: "1rem" }}>Incident Details</h2>
@@ -1172,31 +1361,11 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                     <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                       <div>
                         <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "500", color: "#4b5563", marginBottom: "0.25rem" }}>Chemical Name</label>
-                        <input name="chemicalName" value={form.chemicalName} onChange={onChange} style={{ width: "100%", padding: "0.5rem", border: "1px solid #d1d5db", borderRadius: "0.25rem" }} required />
+                        <input name="chemicalName" value={form.chemicalName} onChange={(e) => setForm({ ...form, chemicalName: e.target.value })} style={{ width: "100%", padding: "0.5rem", border: "1px solid #d1d5db", borderRadius: "0.25rem" }} />
                       </div>
                       <div>
-                        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "500", color: "#4b5563", marginBottom: "0.25rem" }}>Dispersion Model</label>
-                        <select name="dispersionModel" value={form.dispersionModel} onChange={onChange} style={{ width: "100%", padding: "0.5rem", border: "1px solid #d1d5db", borderRadius: "0.25rem" }}>
-                          {DISPERSION_MODELS.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "500", color: "#4b5563", marginBottom: "0.25rem" }}>Source Type</label>
-                        <select name="sourceType" value={form.sourceType} onChange={onChange} style={{ width: "100%", padding: "0.5rem", border: "1px solid #d1d5db", borderRadius: "0.25rem" }}>
-                          <option value="GAS">Gas</option>
-                          <option value="LIQUID">Liquid</option>
-                          <option value="CHEMICAL">Chemical</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "500", color: "#4b5563", marginBottom: "0.25rem" }}>Emission Rate</label>
-                        <input name="rate" type="number" value={form.rate} onChange={onChange} step="any" style={{ width: "100%", padding: "0.5rem", border: "1px solid #d1d5db", borderRadius: "0.25rem" }} required />
-                      </div>
-                      <div>
-                        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "500", color: "#4b5563", marginBottom: "0.25rem" }}>AI Model</label>
-                        <select name="aiModel" value={form.aiModel} onChange={onChange} style={{ width: "100%", padding: "0.5rem", border: "1px solid #d1d5db", borderRadius: "0.25rem" }}>
-                          {AI_MODELS.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}
-                        </select>
+                        <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "500", color: "#4b5563", marginBottom: "0.25rem" }}>Emission Rate (g/s)</label>
+                        <input name="rate" type="number" value={form.rate} onChange={(e) => setForm({ ...form, rate: e.target.value })} step="any" style={{ width: "100%", padding: "0.5rem", border: "1px solid #d1d5db", borderRadius: "0.25rem" }} required />
                       </div>
                       <div style={{ display: "flex", gap: "0.5rem" }}>
                         <button type="submit" style={{ flex: 1, backgroundColor: "#3b82f6", color: "#fff", padding: "0.5rem", borderRadius: "0.25rem", border: "none", cursor: "pointer" }}>Calculate</button>
@@ -1206,41 +1375,53 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                   </div>
                 </>
               )}
+
               {rightSidebarSection === "chat" && (
                 <>
-                <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#1f2937", marginBottom: "1rem" }}>AI Assistant</h2>
-                <div style={{ padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: "0.25rem", backgroundColor: "#fff" }}>
-                  <div ref={chatHistoryRef} style={{ maxHeight: "12rem", overflowY: "auto", marginBottom: "0.5rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                    {chatMessages.map((msg, idx) => (
-                      <div key={idx} style={{ fontSize: "0.75rem", padding: "0.25rem", borderRadius: "0.25rem", backgroundColor: msg.type === 'user' ? '#dbeafe' : '#f3f4f6', textAlign: msg.type === 'user' ? 'right' : 'left' }}>
-                        <span style={{ fontWeight: "500" }}>{msg.type === 'user' ? 'You' : 'AI'}:</span> {msg.content}
-                      </div>
-                    ))}
+                  <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#1f2937", marginBottom: "1rem" }}>AI Assistant</h2>
+                  <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100% - 40px)', padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: "0.25rem", backgroundColor: "#fff" }}>
+                    <div ref={chatHistoryRef} style={{ flex: 1, overflowY: "auto", marginBottom: "0.5rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                      {chatMessages.map((msg, idx) => (
+                        <div key={idx} style={{ fontSize: "0.75rem", padding: "0.5rem", borderRadius: "0.25rem", backgroundColor: msg.type === 'user' ? '#dbeafe' : '#f3f4f6', alignSelf: msg.type === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
+                          <span style={{ fontWeight: "bold" }}>{msg.type === 'user' ? 'You' : 'AI'}</span>
+                          <div style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>{msg.content}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", marginTop: "auto" }}>
+                      <input
+                        type="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && sendChatMessage()}
+                        placeholder="Ask the AI..."
+                        style={{ flex: 1, border: "1px solid #d1d5db", padding: "0.5rem", borderRadius: "0.25rem" }}
+                      />
+                      <button onClick={sendChatMessage} style={{ marginLeft: "0.5rem", padding: "0.5rem", backgroundColor: "#3b82f6", color: "#fff", borderRadius: "0.25rem", border: "none", cursor: "pointer" }}>
+                        <Send size={16} />
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: "flex" }}>
-                    <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendChatMessage()} placeholder="Ask for guidance..." style={{ flex: 1, padding: "0.25rem", fontSize: "0.75rem", border: "1px solid #d1d5db", borderRadius: "0.25rem 0 0 0.25rem" }} />
-                    <button onClick={sendChatMessage} style={{ padding: "0.25rem 0.5rem", backgroundColor: "#3b82f6", color: "#fff", border: "none", borderRadius: "0 0.25rem 0.25rem 0", cursor: "pointer" }}><Send size={12} /></button>
-                  </div>
-                </div>
                 </>
               )}
+
               {rightSidebarSection === "layers" && (
                 <>
                   <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#1f2937", marginBottom: "1rem" }}>Map Layers</h2>
                   <div style={{ padding: "0.75rem", border: "1px solid #e5e7eb", borderRadius: "0.25rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                                        <h3 style={{ fontSize: "1rem", fontWeight: "bold", marginBottom: "0.5rem" }}>Weather Layers</h3>
-                  {WEATHER_GOV_LAYERS.map(layer => (
-                    <label key={layer.id} style={{ display: "flex", alignItems: "center", marginBottom: "0.5rem" }}>
-                      <input
-                        type="checkbox"
-                        checked={!!layerStates[layer.id]}
-                        onChange={() => toggleLayer(layer.id)}
-                        style={{ marginRight: "0.5rem" }}
-                      />
-                      {layer.icon}
-                      <span style={{ marginLeft: "0.25rem" }}>{layer.label}</span>
-                    </label>
-                  ))}
+                    <h3 style={{ fontSize: "1rem", fontWeight: "bold", marginBottom: "0.5rem" }}>Weather Layers</h3>
+                    {WEATHER_GOV_LAYERS.map(layer => (
+                      <label key={layer.id} style={{ display: "flex", alignItems: "center", marginBottom: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={!!layerStates[layer.id]}
+                          onChange={() => toggleLayer(layer.id)}
+                          style={{ marginRight: "0.5rem" }}
+                        />
+                        {layer.icon}
+                        <span style={{ marginLeft: "0.25rem" }}>{layer.label}</span>
+                      </label>
+                    ))}
                     <h3 style={{ fontSize: "1rem", fontWeight: "bold", marginTop: "1rem", marginBottom: "0.5rem" }}>Response Layers</h3>
                     <label style={{ display: "flex", alignItems: "center" }}>
                       <input type="checkbox" checked={layerStates.downwindCorridor} onChange={() => toggleLayer('downwindCorridor')} style={{ marginRight: "0.5rem" }} />Downwind Corridor
@@ -1251,18 +1432,19 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                     {layerStates.pointsOfInterest && (
                       <div style={{ marginTop: "0.75rem", padding: "0.5rem", backgroundColor: "#f9fafb", borderRadius: "0.25rem" }}>
                         <h4 style={{ fontSize: "0.875rem", fontWeight: "500", marginBottom: "0.5rem" }}>POI Types</h4>
-                  {POI_TYPES.map((type) => (
-                    <label key={type.id} style={{ display: "flex", alignItems: "center", fontSize: "0.875rem", marginBottom: "0.25rem" }}>
-                      <input type="checkbox" checked={selectedPois.includes(type.id)} onChange={() => {
-                          setSelectedPois(prev => prev.includes(type.id) ? prev.filter(t => t !== type.id) : [...prev, type.id]);
-                        }} style={{ marginRight: "0.5rem" }} />{type.label}
-                    </label>
-                  ))}
-                </div>
-              )}
+                        {POI_TYPES.map((type) => (
+                          <label key={type.id} style={{ display: "flex", alignItems: "center", fontSize: "0.875rem", marginBottom: "0.25rem" }}>
+                            <input type="checkbox" checked={selectedPois.includes(type.id)} onChange={() => {
+                              setSelectedPois(prev => prev.includes(type.id) ? prev.filter(t => t !== type.id) : [...prev, type.id]);
+                            }} style={{ marginRight: "0.5rem" }} />{type.label}
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </>
               )}
+
               {rightSidebarSection === "analysis" && (
                 <>
                   <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#1f2937", marginBottom: "1rem" }}>Impact Analysis</h2>
@@ -1278,10 +1460,7 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                     <textarea readOnly value={hazardAnalysis} style={{ width: "100%", height: "8rem", padding: "0.5rem", fontSize: "0.75rem", fontFamily: "monospace", backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: "0.25rem", resize: "none" }} placeholder="ERG guidance will appear here when chemical is selected..." />
                     <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid #e5e7eb" }}>
                       <div style={{ display: "flex", alignItems: "center", marginBottom: "0.5rem" }}><Database size={16} style={{ marginRight: "0.25rem" }} /><span style={{ fontSize: "0.875rem", fontWeight: "500" }}>Search ERG</span></div>
-{/* Use the ERGSearch component defined above */}
-<ERGSearch onSelect={(result) => {
-  setForm(f => ({ ...f, chemicalName: result.name }));
-}} />
+                      <ERGSearch onSelect={(result) => setForm(f => ({ ...f, chemicalName: result.name }))} />
                     </div>
                   </div>
                 </>
@@ -1300,24 +1479,34 @@ ${hazardAnalysis ? 'Hazard Analysis: ' + hazardAnalysis : ''}
                       <label style={{ display: "flex", alignItems: "center", marginBottom: "0.5rem" }}>
                         <input type="checkbox" checked={layerStates.externalAPI} onChange={() => toggleLayer('externalAPI')} style={{ marginRight: "0.5rem" }} /><Activity size={16} style={{ marginRight: "0.25rem" }} />External API
                       </label>
-                      <ExternalAPIInterface isOpen={layerStates.externalAPI} settings={externalAPISettings} onSettingsChange={setExternalAPISettings} />
+                      {/* ExternalAPIInterface component presumed defined elsewhere */}
+                      {/* <ExternalAPIInterface isOpen={layerStates.externalAPI} settings={externalAPISettings} onSettingsChange={setExternalAPISettings} /> */}
                     </div>
                   </div>
                 </>
               )}
-      </div>
-    </div>
-      )}
-   </aside>
-
+              {rightSidebarSection === "locate-me" && (
+                <div style={{ padding: "1rem" }}>
+                  <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#1f2937", marginBottom: "1rem" }}>Locate Me</h2>
+                  <button onClick={() => handleLocateMe(setForm, setMarkerPos)} style={{ backgroundColor: "#3b82f6", color: "#fff", padding: "0.75rem", borderRadius: "0.25rem", border: "none", cursor: "pointer" }}>Show My Location</button>
+                </div>
+              )}
+              {rightSidebarSection === "reports" && (
+                <div style={{ padding: "1rem" }}>
+                  <h2 style={{ fontSize: "1.2rem", fontWeight: "bold", color: "#1f2937", marginBottom: "1rem" }}>Reports</h2>
+                  <ReportsSection onGenerate={(type) => alert(`Report generated: ${type}`)} />
+                </div>
+              )}
+            </div>
+          )}
+        </aside>
         {/* Floating Weather Window */}
         {isWeatherFloating && (
           <DraggableAndResizableWeatherWindow
-            initialPosition={{ x: 20, y: 20 }} // Changed from the top-right calculation
+            initialPosition={{ x: 20, y: 20 }}
             initialSize={{ width: 216, height: 302 }}
             onDock={() => {
               setIsWeatherFloating(false);
-              setRightSidebarSection('layers');
             }}
           >
             <WindRoseDisplay weather={form.weather} />
