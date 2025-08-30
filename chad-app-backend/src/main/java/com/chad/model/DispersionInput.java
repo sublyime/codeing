@@ -1,5 +1,8 @@
 package com.chad.model;
 
+/**
+ * Holds input parameters for dispersion modeling.
+ */
 public class DispersionInput {
 
     private String model; // e.g., "GAUSSIAN"
@@ -16,21 +19,27 @@ public class DispersionInput {
     // New field to hold chemical properties JSON
     private String chemicalPropertiesJson;
 
-    // Enum for chemical incident type
-    public enum IncidentType {
+    /**
+     * Enum for chemical incident type.
+     */
+    public static enum IncidentType {
         GAS,
         LIQUID,
         VAPOR_CLOUD
     }
 
-    // Enum for atmospheric stability classes
-    public enum StabilityClass {
+    /**
+     * Enum for atmospheric stability classes.
+     */
+    public static enum StabilityClass {
         A, B, C, D, E, F
     }
 
     public DispersionInput() {
         // Default constructor
     }
+
+    // Getters and setters
 
     public String getModel() {
         return model;
@@ -118,5 +127,22 @@ public class DispersionInput {
 
     public void setChemicalPropertiesJson(String chemicalPropertiesJson) {
         this.chemicalPropertiesJson = chemicalPropertiesJson;
+    }
+
+    @Override
+    public String toString() {
+        return "DispersionInput{" +
+                "model='" + model + '\'' +
+                ", chemicalName='" + chemicalName + '\'' +
+                ", incidentType=" + incidentType +
+                ", latitude=" + latitude +
+                ", longitude=" + longitude +
+                ", sourceReleaseRate=" + sourceReleaseRate +
+                ", windSpeed=" + windSpeed +
+                ", windDirection=" + windDirection +
+                ", sourceReleaseType='" + sourceReleaseType + '\'' +
+                ", stabilityClass=" + stabilityClass +
+                ", chemicalPropertiesJson='" + chemicalPropertiesJson + '\'' +
+                '}';
     }
 }
